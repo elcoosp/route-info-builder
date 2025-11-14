@@ -745,16 +745,32 @@ fn extract_http_method_and_handler(expr: &syn::Expr) -> Option<(String, String)>
 fn generate_route_name(path: &str, method: &str, config: &Config) -> String {
     let include_method = config.include_method_in_names.unwrap_or(true);
 
-    // Remove prefix if specified
-    let mut processed_path = path.to_string();
+    // Create two versions of the path:
+    // 1. The full path for the actual URL (includes prefix)
+    // 2. The cleaned path for the name (prefix removed)
+
+    let mut name_path = path.to_string();
+
+    // Remove prefix from name but keep it in the actual route path
     if let Some(prefix) = &config.path_prefix_to_remove {
-        if processed_path.starts_with(prefix) {
-            processed_path = processed_path[prefix.len()..].to_string();
+        let normalized_prefix = prefix.trim_matches('/');
+        let normalized_path = name_path.trim_matches('/');
+
+        if normalized_path.starts_with(normalized_prefix) {
+            // Remove the prefix from the name but NOT from the actual path
+            name_path = normalized_path[normalized_prefix.len()..].to_string();
+            // Remove leading slash if present
+            name_path = name_path.trim_start_matches('/').to_string();
+
+            // If we removed everything, set to empty (will become "root")
+            if name_path.is_empty() {
+                name_path = "".to_string();
+            }
         }
     }
 
-    // Clean the path for name generation
-    let clean_path = clean_route_path_for_name(&processed_path, config);
+    // Clean the path for name generation (this only affects the name, not the actual URL)
+    let clean_path = clean_route_path_for_name(&name_path, config);
 
     let base_name = if clean_path.is_empty() || clean_path == "/" {
         "root".to_string()
