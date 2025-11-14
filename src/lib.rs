@@ -2,7 +2,7 @@ use convert_case::{Case, Casing};
 use proc_macro2::TokenStream;
 use quote::quote;
 use serde::Deserialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -30,7 +30,7 @@ pub struct Config {
     pub variant_suffix: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RouteInfo {
     pub name: String,
     pub path: String,
@@ -70,6 +70,22 @@ fn scan_controllers_folder(config: &Config) -> Result<Vec<RouteInfo>, Box<dyn st
             }
         }
     }
+
+    // Deduplicate routes by (method, path) combination
+    let mut seen = HashSet::new();
+    routes.retain(|route| {
+        let key = (route.method.clone(), route.path.clone());
+        if seen.contains(&key) {
+            eprintln!(
+                "cargo:warning=Duplicate route skipped: {} {}",
+                route.method, route.path
+            );
+            false
+        } else {
+            seen.insert(key);
+            true
+        }
+    });
 
     Ok(routes)
 }
@@ -231,7 +247,7 @@ fn generate_route_name(path: &str, method: &str, config: &Config) -> String {
     // Clean the path for name generation
     let clean_path = clean_route_path_for_name(&processed_path, config);
 
-    let base_name = if clean_path.is_empty() {
+    let base_name = if clean_path.is_empty() || clean_path == "/" {
         "root".to_string()
     } else {
         clean_path
@@ -298,8 +314,27 @@ fn generate_links_enum(routes: &[RouteInfo], config: &Config) -> String {
     let mut match_arms = Vec::new();
     let mut method_arms = Vec::new();
 
+    // Use a HashMap to track unique variant names and avoid duplicates
+    let mut unique_variants: HashMap<String, RouteInfo> = HashMap::new();
+
     for route in routes {
         let variant_name = create_variant_name(&route.name, config);
+        let variant_name_str = variant_name.to_string();
+
+        // Check for duplicate variant names
+        if let Some(existing_route) = unique_variants.get(&variant_name_str) {
+            eprintln!(
+                "cargo:warning=Duplicate variant name '{}' for routes: {} {} and {} {}",
+                variant_name_str,
+                route.method,
+                route.path,
+                existing_route.method,
+                existing_route.path
+            );
+            continue;
+        }
+
+        unique_variants.insert(variant_name_str.clone(), route.clone());
         let route_path = route.path.clone();
         let route_method = route.method.clone();
 
@@ -424,13 +459,11 @@ fn convert_case(input: &str, case: &str) -> String {
 }
 
 fn generate_path_build_code(path_template: &str, fields: &[proc_macro2::Ident]) -> TokenStream {
-    let mut path_parts = Vec::new();
+    // Parse the path template and build a sequence of push operations
+    let segments: Vec<&str> = path_template.split('/').filter(|s| !s.is_empty()).collect();
+    let mut push_operations = Vec::new();
 
-    for segment in path_template.split('/') {
-        if segment.is_empty() {
-            continue;
-        }
-
+    for (i, segment) in segments.iter().enumerate() {
         if segment.starts_with('{') && segment.ends_with('}') {
             let param_name = &segment[1..segment.len() - 1];
             let field_ident = syn::Ident::new(
@@ -438,32 +471,38 @@ fn generate_path_build_code(path_template: &str, fields: &[proc_macro2::Ident]) 
                 proc_macro2::Span::call_site(),
             );
 
-            // Verify this field exists
+            // Verify this field exists and add it to the path
             if fields.iter().any(|f| f == &field_ident) {
-                path_parts.push(quote! { #field_ident.clone() });
+                if i > 0 {
+                    push_operations.push(quote! { path.push('/'); });
+                }
+                push_operations.push(quote! { path.push_str(&#field_ident); });
             } else {
-                path_parts.push(quote! { #segment.to_string() });
+                // Field doesn't exist, use literal
+                if i > 0 {
+                    push_operations.push(quote! { path.push('/'); });
+                }
+                push_operations.push(quote! { path.push_str(#segment); });
             }
         } else {
-            path_parts.push(quote! { #segment.to_string() });
+            // Fixed segment
+            if i > 0 {
+                push_operations.push(quote! { path.push('/'); });
+            }
+            push_operations.push(quote! { path.push_str(#segment); });
         }
     }
 
-    if path_parts.is_empty() {
+    // Handle empty path (just "/")
+    if push_operations.is_empty() {
         quote! { "/".to_string() }
     } else {
         quote! {
-            let mut path = String::new();
-            #(
-                if !path.is_empty() {
-                    path.push('/');
-                }
-                path.push_str(&#path_parts);
-            )*
-            if path.is_empty() {
-                path.push('/');
+            {
+                let mut path = String::new();
+                #(#push_operations)*
+                path
             }
-            path
         }
     }
 }
