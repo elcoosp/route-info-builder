@@ -86,25 +86,25 @@ fn generate_ts_client_code(
     let mut client_methods = Vec::new();
     let mut hooks = Vec::new();
     let mut interfaces = Vec::new();
-    let mut body_types = Vec::new();
+    let mut type_imports = HashSet::new(); // Track types to import
 
     // Generate imports
     imports.push(ts_string! {
         import { useQuery, useMutation, type UseQueryOptions, type UseMutationOptions } from "@tanstack/react-query";
     });
 
-    // Collect all unique body types
-    let mut unique_body_types = HashSet::new();
+    // Collect all unique body types for import
     for route in routes {
         if let Some(body_type) = &route.body_param {
-            unique_body_types.insert(body_type.clone());
+            type_imports.insert(body_type.clone());
         }
     }
 
-    // Generate body type imports/exports
-    for body_type in unique_body_types {
-        body_types.push(ts_string! {
-            export type #body_type = any; // Replace with actual type definition if available
+    // Generate type imports
+    for type_name in &type_imports {
+        let import = format!("\"../../bindings/{type_name}\"");
+        imports.push(ts_string! {
+            import { type #type_name } from #import;
         });
     }
 
@@ -135,7 +135,6 @@ fn generate_ts_client_code(
     let client_methods_str = client_methods.join("\n");
     let interfaces_str = interfaces.join("\n");
     let hooks_str = hooks.join("\n");
-    let body_types_str = body_types.join("\n");
 
     // Combine all parts
     let ts_code = ts_string! {
@@ -143,9 +142,6 @@ fn generate_ts_client_code(
 
         // HTTP client with auth support
         #http_client
-
-        // Body types
-        #body_types_str
 
         // Client
         export const client = {
@@ -274,8 +270,8 @@ fn generate_ts_client_method<'a>(
     let method_upper = route.method.to_uppercase();
     let path_template = generate_ts_path_template(&route.path, params);
 
-    // Determine body type - use the extracted body param type or fall back to 'any'
-    let body_type = route.body_param.as_deref().unwrap_or("any");
+    // Use the actual body type or void for no body
+    let body_type = route.body_param.as_deref().unwrap_or("void");
     let requires_auth = route.requires_auth;
 
     if params.is_empty() {
@@ -287,13 +283,12 @@ fn generate_ts_client_method<'a>(
                 },
             }
         } else {
-            // Use lowercase method names directly instead of method_upper.to_lowercase()
             let method_call = match route.method.as_str() {
                 "POST" => "post",
                 "PUT" => "put",
                 "PATCH" => "patch",
                 "DELETE" => "delete",
-                _ => "post", // fallback
+                _ => "post",
             };
 
             ts_string! {
@@ -389,7 +384,7 @@ fn generate_ts_hook(
     params: &[String],
 ) -> String {
     let method_name_str = format!("\"{method_name}\"");
-    let body_type = route.body_param.as_deref().unwrap_or("any");
+    let body_type = route.body_param.as_deref().unwrap_or("void");
     let requires_auth = route.requires_auth;
 
     if route.method == "GET" {
@@ -417,7 +412,7 @@ fn generate_ts_hook(
             }
         }
     } else {
-        // Mutation hook
+        // Mutation hook - use proper body type
         if params.is_empty() {
             ts_string! {
                 export function #hook_name(options?: UseMutationOptions<any, Error, #body_type, unknown>) {
