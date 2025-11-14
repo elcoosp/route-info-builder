@@ -39,14 +39,13 @@ pub struct RouteInfo {
     pub path: String,
     pub method: String,
     pub handler: String,
-    pub body_param: Option<String>,
-    pub requires_auth: bool,
+    pub handler_info: HandlerInfo,
 }
 
-#[derive(Debug)]
-struct HandlerInfo {
-    body_param: Option<String>,
-    requires_auth: bool,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct HandlerInfo {
+    pub body_param: Option<String>,
+    pub requires_auth: bool,
 }
 
 /// Main function to generate links enum from controller files
@@ -95,14 +94,14 @@ fn generate_ts_client_code(
 
     // Collect all unique body types for import
     for route in routes {
-        if let Some(body_type) = &route.body_param {
+        if let Some(body_type) = &route.handler_info.body_param {
             type_imports.insert(body_type.clone());
         }
     }
 
     // Generate type imports
     for type_name in &type_imports {
-        let import = format!("\"../../bindings/{type_name}\"");
+        let import = format!("\"../../../bindings/{type_name}\"");
         imports.push(ts_string! {
             import { type #type_name } from #import;
         });
@@ -271,8 +270,8 @@ fn generate_ts_client_method<'a>(
     let path_template = generate_ts_path_template(&route.path, params);
 
     // Use the actual body type or void for no body
-    let body_type = route.body_param.as_deref().unwrap_or("void");
-    let requires_auth = route.requires_auth;
+    let body_type = route.handler_info.body_param.as_deref().unwrap_or("void");
+    let requires_auth = route.handler_info.requires_auth;
 
     if params.is_empty() {
         if route.method == "GET" {
@@ -384,8 +383,8 @@ fn generate_ts_hook(
     params: &[String],
 ) -> String {
     let method_name_str = format!("\"{method_name}\"");
-    let body_type = route.body_param.as_deref().unwrap_or("void");
-    let requires_auth = route.requires_auth;
+    let body_type = route.handler_info.body_param.as_deref().unwrap_or("void");
+    let requires_auth = route.handler_info.requires_auth;
 
     if route.method == "GET" {
         if params.is_empty() {
@@ -521,13 +520,12 @@ fn parse_routes_from_file(
     }
 
     // Now extract body parameters and auth requirements from handler functions
-    let handler_info = extract_handler_info(&syntax)?;
+    let handler_info_map = extract_handler_info(&syntax)?;
 
-    // Update routes with body parameter and auth information
+    // Update routes with handler information
     for route in &mut routes {
-        if let Some(info) = handler_info.get(&route.handler) {
-            route.body_param = info.body_param.clone();
-            route.requires_auth = info.requires_auth;
+        if let Some(info) = handler_info_map.get(&route.handler) {
+            route.handler_info = info.clone(); // Set the complete HandlerInfo
         }
     }
 
@@ -537,7 +535,6 @@ fn parse_routes_from_file(
         Ok(Some(routes))
     }
 }
-
 /// Extract body parameter types and auth requirements from handler functions
 fn extract_handler_info(
     syntax: &syn::File,
@@ -550,13 +547,19 @@ fn extract_handler_info(
             let mut body_param = None;
             let mut requires_auth = false;
 
-            // Look for JsonValidateWithMessage parameters and auth: JWT
+            // Look for Json, JsonValidate, and JsonValidateWithMessage parameters
             for input in &func.sig.inputs {
                 if let syn::FnArg::Typed(pat_type) = input {
-                    // Check for body parameters (JsonValidateWithMessage<T>)
+                    // Check for body parameters (Json<T>, JsonValidate<T>, JsonValidateWithMessage<T>)
                     if let syn::Type::Path(type_path) = &*pat_type.ty {
                         if let Some(segment) = type_path.path.segments.last() {
-                            if segment.ident == "JsonValidateWithMessage" {
+                            let type_ident = segment.ident.to_string();
+
+                            // Handle Json<T>, JsonValidate<T>, and JsonValidateWithMessage<T>
+                            if matches!(
+                                type_ident.as_str(),
+                                "Json" | "JsonValidate" | "JsonValidateWithMessage"
+                            ) {
                                 // Extract the generic type parameter
                                 if let syn::PathArguments::AngleBracketed(generics) =
                                     &segment.arguments
@@ -637,16 +640,23 @@ fn extract_routes_from_expr(
         syn::Expr::MethodCall(method_call) => {
             let method_name = method_call.method.to_string();
 
+            // FIRST process the receiver to establish context (including any prefixes)
+            extract_routes_from_expr(&method_call.receiver, routes, prefix, config)?;
+
+            // THEN process the current method call
             match method_name.as_str() {
                 "prefix" => {
                     if let Some(first_arg) = method_call.args.first() {
                         if let syn::Expr::Lit(expr_lit) = first_arg {
                             if let syn::Lit::Str(lit_str) = &expr_lit.lit {
                                 *prefix = lit_str.value();
+                                // Ensure prefix starts with slash
+                                if !prefix.starts_with('/') {
+                                    *prefix = format!("/{}", prefix);
+                                }
                             }
                         }
                     }
-                    extract_routes_from_expr(&method_call.receiver, routes, prefix, config)?;
                 }
                 "add" => {
                     if let (Some(path_expr), Some(method_expr)) =
@@ -657,11 +667,8 @@ fn extract_routes_from_expr(
                         let (method, handler) = extract_http_method_and_handler(method_expr)
                             .ok_or("Failed to extract HTTP method and handler from add() call")?;
 
-                        let full_path = if prefix.is_empty() {
-                            path.clone()
-                        } else {
-                            format!("{}{}", prefix, path)
-                        };
+                        // Build full path with current prefix
+                        let full_path = build_full_path(prefix, &path);
 
                         let name = generate_route_name(&full_path, &method, config);
 
@@ -670,26 +677,22 @@ fn extract_routes_from_expr(
                             path: full_path,
                             method,
                             handler,
-                            body_param: None,     // Will be filled in later
-                            requires_auth: false, // Will be filled in later
+                            handler_info: HandlerInfo {
+                                body_param: None,
+                                requires_auth: false,
+                            },
                         });
                     }
-                    extract_routes_from_expr(&method_call.receiver, routes, prefix, config)?;
                 }
-                "new" => {
-                    // Routes::new() - nothing to extract
-                }
-                _ => {
-                    extract_routes_from_expr(&method_call.receiver, routes, prefix, config)?;
-                }
+                _ => {}
             }
         }
         syn::Expr::Call(call_expr) => {
-            // Handle Routes::new() call
+            // Handle Routes::new() call - reset prefix
             if let syn::Expr::Path(path_expr) = &*call_expr.func {
                 if let Some(segment) = path_expr.path.segments.last() {
                     if segment.ident == "new" {
-                        // This is the start of the chain
+                        *prefix = String::new(); // Reset prefix for new chain
                     }
                 }
             }
@@ -699,7 +702,15 @@ fn extract_routes_from_expr(
 
     Ok(())
 }
-
+fn build_full_path(prefix: &str, path: &str) -> String {
+    if prefix.is_empty() {
+        path.to_string()
+    } else {
+        let clean_prefix = prefix.trim_end_matches('/');
+        let clean_path = path.trim_start_matches('/');
+        format!("{}/{}", clean_prefix, clean_path)
+    }
+}
 fn extract_string_literal(expr: &syn::Expr) -> Option<String> {
     if let syn::Expr::Lit(expr_lit) = expr {
         if let syn::Lit::Str(lit_str) = &expr_lit.lit {
