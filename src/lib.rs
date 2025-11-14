@@ -416,9 +416,6 @@ fn convert_case(input: &str, case: &str) -> String {
         "camel" | "camelcase" => input.to_case(Case::Camel),
         "snake" | "snake_case" => input.to_case(Case::Snake),
         "kebab" | "kebab-case" => input.to_case(Case::Kebab),
-        "screaming_snake" | "screaming_snake_case" | "upper_snake" => {
-            input.to_case(Case::ScreamingSnake)
-        }
         "title" | "title_case" => input.to_case(Case::Title),
         "lower" | "lowercase" => input.to_lowercase(),
         "upper" | "uppercase" => input.to_uppercase(),
