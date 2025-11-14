@@ -5,6 +5,7 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use ts_quote::TSSource;
 
 #[derive(Debug, Deserialize, Default)]
 pub struct Config {
@@ -28,6 +29,10 @@ pub struct Config {
     pub variant_prefix: Option<String>,
     /// Custom suffix for variant names
     pub variant_suffix: Option<String>,
+    /// Optional output path for TypeScript client
+    pub typescript_client_output: Option<PathBuf>,
+    /// Whether to generate TypeScript client
+    pub generate_typescript_client: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -38,10 +43,296 @@ pub struct RouteInfo {
 }
 
 /// Main function to generate links enum from controller files
-pub fn generate_links(config: &Config) -> Result<String, Box<dyn std::error::Error>> {
+pub fn generate_links(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
     let routes = scan_controllers_folder(config)?;
-    let generated_code = generate_links_enum(&routes, config);
-    Ok(generated_code)
+
+    // Generate Rust links enum
+    let rust_code = generate_links_enum(&routes, config);
+    if let Some(output_file) = &config.output_file {
+        fs::write(output_file, rust_code)?;
+        println!(
+            "cargo:warning=Generated Rust links enum at: {}",
+            output_file
+        );
+    }
+
+    // Generate TypeScript client if requested
+    if config.generate_typescript_client.unwrap_or(false) {
+        if let Some(ts_output) = &config.typescript_client_output {
+            let ts_code = generate_ts_client_code(&routes, config)?;
+            fs::write(ts_output, ts_code)?;
+            println!(
+                "cargo:warning=Generated TypeScript client at: {}",
+                ts_output.display()
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Generate TypeScript HTTP client compatible with tanstack-query
+pub fn generate_ts_client(config: &Config) -> Result<String, Box<dyn std::error::Error>> {
+    let routes = scan_controllers_folder(config)?;
+    let ts_code = generate_ts_client_code(&routes, config)?;
+    Ok(ts_code)
+}
+
+fn generate_ts_client_code(
+    routes: &[RouteInfo],
+    config: &Config,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let mut imports = Vec::new();
+    let mut client_methods = Vec::new();
+    let mut hooks = Vec::new();
+    let mut interfaces = Vec::new();
+
+    // Generate imports
+    imports.push(ts_quote::ts_string! {
+        import { useQuery, useMutation, type UseQueryOptions, type UseMutationOptions } from "@tanstack/react-query";
+    });
+    for route in routes {
+        let method_name = convert_case_ts(&route.name, "camel");
+        let hook_name = format!("use{}", convert_case_ts(&route.name, "pascal"));
+        let params = extract_parameters_from_path(&route.path);
+
+        // Generate client method
+        let client_method = generate_ts_client_method(route, &method_name, &params);
+        client_methods.push(client_method);
+
+        // Generate parameter interface if needed
+        if !params.is_empty() {
+            let interface = generate_ts_interface(&method_name, &params);
+            interfaces.push(interface);
+        }
+
+        // Generate hook
+        let hook = generate_ts_hook(route, &method_name, &hook_name, &params);
+        hooks.push(hook);
+    }
+    let imports_str = imports.join("\n");
+    let client_methods_str = client_methods.join("\n");
+    let interfaces_str = interfaces.join("\n");
+    let hooks_str = hooks.join("\n");
+    // Combine all parts
+    let ts_code = ts_quote::ts_string! {
+        #imports_str
+
+        // Client
+        export const client = {
+            #client_methods_str
+        };
+
+        // Interfaces
+        #interfaces_str
+
+        // Hooks
+        #hooks_str
+    };
+
+    // Format the TypeScript code
+    let formatted = format_ts_code(&ts_code.to_string())?;
+    Ok(formatted)
+}
+
+fn generate_ts_client_method<'a>(
+    route: &'a RouteInfo,
+    method_name: &'a str,
+    params: &'a [String],
+) -> String {
+    let method_upper = route.method.to_uppercase();
+    let path_template = generate_ts_path_template(&route.path, params);
+
+    if params.is_empty() {
+        if route.method == "GET" {
+            ts_quote::ts_string! {
+                #method_name: () => ({
+                    url: #path_template,
+                    method: #method_upper,
+                }),
+            }
+        } else {
+            ts_quote::ts_string! {
+                #method_name: (body: any) => ({
+                    url: #path_template,
+                    method: #method_upper,
+                    body: JSON.stringify(body),
+                }),
+            }
+        }
+    } else {
+        let params_type = format!("{}Params", convert_case_ts(method_name, "pascal"));
+
+        if route.method == "GET" {
+            ts_quote::ts_string! {
+                #method_name: (params: #params_type) => {
+                    const url = #path_template;
+                    return {
+                        url,
+                        method: #method_upper,
+                    };
+                },
+            }
+        } else {
+            ts_quote::ts_string! {
+                #method_name: (params: #params_type, body: any) => {
+                    const url = #path_template;
+                    return {
+                        url,
+                        method: #method_upper,
+                        body: JSON.stringify(body),
+                    };
+                },
+            }
+        }
+    }
+}
+
+fn generate_ts_path_template(path: &str, params: &[String]) -> String {
+    let mut template = String::new();
+    let segments: Vec<&str> = path.split('/').collect();
+
+    for (i, segment) in segments.iter().enumerate() {
+        if segment.is_empty() {
+            continue;
+        }
+
+        if i > 0 {
+            template.push('/');
+        }
+
+        if segment.starts_with('{') && segment.ends_with('}') {
+            let param_name = &segment[1..segment.len() - 1];
+            let ts_param_name = convert_case_ts(param_name, "camel");
+            template.push_str(&format!("${{params.{}}}", ts_param_name));
+        } else {
+            template.push_str(segment);
+        }
+    }
+
+    if template.is_empty() {
+        "/".to_string()
+    } else if !template.starts_with('/') {
+        format!("/{}", template)
+    } else {
+        template
+    }
+}
+
+fn generate_ts_interface(method_name: &str, params: &[String]) -> String {
+    let interface_name = format!("{}Params", convert_case_ts(method_name, "pascal"));
+    let mut fields = Vec::new();
+
+    for param in params {
+        let field_name = convert_case_ts(param, "camel");
+        fields.push(ts_quote::ts_string! {
+            #field_name: string;
+        });
+    }
+    let fields_str = fields.join("\n");
+    ts_quote::ts_string! {
+        interface #interface_name {
+            #fields_str
+        }
+    }
+}
+
+fn generate_ts_hook(
+    route: &RouteInfo,
+    method_name: &str,
+    hook_name: &str,
+    params: &[String],
+) -> String {
+    let method_upper = route.method.to_uppercase();
+
+    if route.method == "GET" {
+        if params.is_empty() {
+            ts_quote::ts_string! {
+                export function #hook_name(options?: UseQueryOptions<any, Error>) {
+                    return useQuery({
+                        queryKey: [#method_name],
+                        queryFn: () => {
+                            const { url, method } = client.#method_name();
+                            return fetch(url, { method }).then(res => res.json());
+                        },
+                        ...options,
+                    });
+                }
+            }
+            .into()
+        } else {
+            let params_type = format!("{}Params", convert_case_ts(method_name, "pascal"));
+            ts_quote::ts_string! {
+                export function #hook_name(params: #params_type, options?: UseQueryOptions<any, Error>) {
+                    return useQuery({
+                        queryKey: [#method_name, params],
+                        queryFn: () => {
+                            const { url, method } = client.#method_name(params);
+                            return fetch(url, { method }).then(res => res.json());
+                        },
+                        ...options,
+                    });
+                }
+            }
+        }
+    } else {
+        // Mutation hook
+        if params.is_empty() {
+            ts_quote::ts_string! {
+                export function #hook_name(options?: UseMutationOptions<any, Error, any, unknown>) {
+                    return useMutation({
+                        mutationFn: (body: any) => {
+                            const { url, method, body: requestBody } = client.#method_name(body);
+                            return fetch(url, {
+                                method,
+                                body: requestBody,
+                                headers: {
+                                    "Content-Type": "application/json",
+                                },
+                            }).then(res => res.json());
+                        },
+                        ...options,
+                    });
+                }
+            }
+            .into()
+        } else {
+            let params_type = format!("{}Params", convert_case_ts(method_name, "pascal"));
+            ts_quote::ts_string! {
+                export function #hook_name(options?: UseMutationOptions<any, Error, { params: #params_type, body: any }, unknown>) {
+                    return useMutation({
+                        mutationFn: (input: { params: #params_type, body: any }) => {
+                            const { url, method, body: requestBody } = client.#method_name(input.params, input.body);
+                            return fetch(url, {
+                                method,
+                                body: requestBody,
+                                headers: {
+                                    "Content-Type": "application/json",
+                                },
+                            }).then(res => res.json());
+                        },
+                        ...options,
+                    });
+                }
+            }
+        }
+    }
+}
+
+fn format_ts_code(code: &str) -> Result<String, Box<dyn std::error::Error>> {
+    // For now, we'll use a simple formatter since deno_ast might be heavy
+    // You can replace this with deno_ast formatting if needed
+    Ok(code.to_string())
+}
+
+fn convert_case_ts(input: &str, case: &str) -> String {
+    match case.to_lowercase().as_str() {
+        "camel" | "camelcase" => input.to_case(Case::Camel),
+        "pascal" | "pascalcase" => input.to_case(Case::Pascal),
+        "snake" | "snake_case" => input.to_case(Case::Snake),
+        "kebab" | "kebab-case" => input.to_case(Case::Kebab),
+        _ => input.to_case(Case::Camel), // default to camelCase for TypeScript
+    }
 }
 
 fn scan_controllers_folder(config: &Config) -> Result<Vec<RouteInfo>, Box<dyn std::error::Error>> {
