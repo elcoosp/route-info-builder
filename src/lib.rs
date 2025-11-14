@@ -5,7 +5,7 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use ts_quote::TSSource;
+use ts_quote::ts_string;
 
 #[derive(Debug, Deserialize, Default)]
 pub struct Config {
@@ -88,7 +88,7 @@ fn generate_ts_client_code(
     let mut interfaces = Vec::new();
 
     // Generate imports
-    imports.push(ts_quote::ts_string! {
+    imports.push(ts_string! {
         import { useQuery, useMutation, type UseQueryOptions, type UseMutationOptions } from "@tanstack/react-query";
     });
     for route in routes {
@@ -115,7 +115,7 @@ fn generate_ts_client_code(
     let interfaces_str = interfaces.join("\n");
     let hooks_str = hooks.join("\n");
     // Combine all parts
-    let ts_code = ts_quote::ts_string! {
+    let ts_code = ts_string! {
         #imports_str
 
         // Client
@@ -140,22 +140,23 @@ fn generate_ts_client_method<'a>(
     method_name: &'a str,
     params: &'a [String],
 ) -> String {
-    let method_upper = route.method.to_uppercase();
+    let method_upper_str = format!("'{}'", route.method.to_uppercase());
+
     let path_template = generate_ts_path_template(&route.path, params);
 
     if params.is_empty() {
         if route.method == "GET" {
-            ts_quote::ts_string! {
+            ts_string! {
                 #method_name: () => ({
                     url: #path_template,
-                    method: #method_upper,
+                    method: #method_upper_str,
                 }),
             }
         } else {
-            ts_quote::ts_string! {
+            ts_string! {
                 #method_name: (body: any) => ({
                     url: #path_template,
-                    method: #method_upper,
+                    method: #method_upper_str,
                     body: JSON.stringify(body),
                 }),
             }
@@ -164,22 +165,22 @@ fn generate_ts_client_method<'a>(
         let params_type = format!("{}Params", convert_case_ts(method_name, "pascal"));
 
         if route.method == "GET" {
-            ts_quote::ts_string! {
+            ts_string! {
                 #method_name: (params: #params_type) => {
                     const url = #path_template;
                     return {
                         url,
-                        method: #method_upper,
+                        method: #method_upper_str,
                     };
                 },
             }
         } else {
-            ts_quote::ts_string! {
+            ts_string! {
                 #method_name: (params: #params_type, body: any) => {
                     const url = #path_template;
                     return {
                         url,
-                        method: #method_upper,
+                        method: #method_upper_str,
                         body: JSON.stringify(body),
                     };
                 },
@@ -210,13 +211,14 @@ fn generate_ts_path_template(path: &str, params: &[String]) -> String {
         }
     }
 
-    if template.is_empty() {
+    let temp = if template.is_empty() {
         "/".to_string()
     } else if !template.starts_with('/') {
         format!("/{}", template)
     } else {
         template
-    }
+    };
+    format!("`{temp}`")
 }
 
 fn generate_ts_interface(method_name: &str, params: &[String]) -> String {
@@ -225,12 +227,12 @@ fn generate_ts_interface(method_name: &str, params: &[String]) -> String {
 
     for param in params {
         let field_name = convert_case_ts(param, "camel");
-        fields.push(ts_quote::ts_string! {
+        fields.push(ts_string! {
             #field_name: string;
         });
     }
     let fields_str = fields.join("\n");
-    ts_quote::ts_string! {
+    ts_string! {
         interface #interface_name {
             #fields_str
         }
@@ -243,14 +245,13 @@ fn generate_ts_hook(
     hook_name: &str,
     params: &[String],
 ) -> String {
-    let method_upper = route.method.to_uppercase();
-
+    let method_name_str = format!("\"{method_name}\"");
     if route.method == "GET" {
         if params.is_empty() {
-            ts_quote::ts_string! {
+            ts_string! {
                 export function #hook_name(options?: UseQueryOptions<any, Error>) {
                     return useQuery({
-                        queryKey: [#method_name],
+                        queryKey: [#method_name_str],
                         queryFn: () => {
                             const { url, method } = client.#method_name();
                             return fetch(url, { method }).then(res => res.json());
@@ -262,10 +263,10 @@ fn generate_ts_hook(
             .into()
         } else {
             let params_type = format!("{}Params", convert_case_ts(method_name, "pascal"));
-            ts_quote::ts_string! {
+            ts_string! {
                 export function #hook_name(params: #params_type, options?: UseQueryOptions<any, Error>) {
                     return useQuery({
-                        queryKey: [#method_name, params],
+                        queryKey: [#method_name_str, params],
                         queryFn: () => {
                             const { url, method } = client.#method_name(params);
                             return fetch(url, { method }).then(res => res.json());
@@ -278,7 +279,7 @@ fn generate_ts_hook(
     } else {
         // Mutation hook
         if params.is_empty() {
-            ts_quote::ts_string! {
+            ts_string! {
                 export function #hook_name(options?: UseMutationOptions<any, Error, any, unknown>) {
                     return useMutation({
                         mutationFn: (body: any) => {
@@ -298,7 +299,7 @@ fn generate_ts_hook(
             .into()
         } else {
             let params_type = format!("{}Params", convert_case_ts(method_name, "pascal"));
-            ts_quote::ts_string! {
+            ts_string! {
                 export function #hook_name(options?: UseMutationOptions<any, Error, { params: #params_type, body: any }, unknown>) {
                     return useMutation({
                         mutationFn: (input: { params: #params_type, body: any }) => {
