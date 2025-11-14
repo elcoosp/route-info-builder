@@ -11,8 +11,6 @@ use ts_quote::ts_string;
 pub struct Config {
     /// Path to the controllers directory to scan
     pub controllers_path: PathBuf,
-    /// Optional output file name (default: "links.rs")
-    pub output_file: Option<String>,
     /// Whether to include HTTP methods in variant names
     pub include_method_in_names: Option<bool>,
     /// Custom prefix to remove from paths when generating names
@@ -40,21 +38,23 @@ pub struct RouteInfo {
     pub name: String,
     pub path: String,
     pub method: String,
+    pub handler: String,
+    pub body_param: Option<String>,
+    pub requires_auth: bool,
+}
+
+#[derive(Debug)]
+struct HandlerInfo {
+    body_param: Option<String>,
+    requires_auth: bool,
 }
 
 /// Main function to generate links enum from controller files
-pub fn generate_links(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+pub fn generate_links(config: &Config) -> Result<String, Box<dyn std::error::Error>> {
     let routes = scan_controllers_folder(config)?;
 
     // Generate Rust links enum
     let rust_code = generate_links_enum(&routes, config);
-    if let Some(output_file) = &config.output_file {
-        fs::write(output_file, rust_code)?;
-        println!(
-            "cargo:warning=Generated Rust links enum at: {}",
-            output_file
-        );
-    }
 
     // Generate TypeScript client if requested
     if config.generate_typescript_client.unwrap_or(false) {
@@ -68,7 +68,7 @@ pub fn generate_links(config: &Config) -> Result<(), Box<dyn std::error::Error>>
         }
     }
 
-    Ok(())
+    Ok(rust_code)
 }
 
 /// Generate TypeScript HTTP client compatible with tanstack-query
@@ -86,11 +86,31 @@ fn generate_ts_client_code(
     let mut client_methods = Vec::new();
     let mut hooks = Vec::new();
     let mut interfaces = Vec::new();
+    let mut body_types = Vec::new();
 
     // Generate imports
     imports.push(ts_string! {
         import { useQuery, useMutation, type UseQueryOptions, type UseMutationOptions } from "@tanstack/react-query";
     });
+
+    // Collect all unique body types
+    let mut unique_body_types = HashSet::new();
+    for route in routes {
+        if let Some(body_type) = &route.body_param {
+            unique_body_types.insert(body_type.clone());
+        }
+    }
+
+    // Generate body type imports/exports
+    for body_type in unique_body_types {
+        body_types.push(ts_string! {
+            export type #body_type = any; // Replace with actual type definition if available
+        });
+    }
+
+    // Generate the base HTTP client with auth support
+    let http_client = generate_http_client();
+
     for route in routes {
         let method_name = convert_case_ts(&route.name, "camel");
         let hook_name = format!("use{}", convert_case_ts(&route.name, "pascal"));
@@ -110,13 +130,22 @@ fn generate_ts_client_code(
         let hook = generate_ts_hook(route, &method_name, &hook_name, &params);
         hooks.push(hook);
     }
+
     let imports_str = imports.join("\n");
     let client_methods_str = client_methods.join("\n");
     let interfaces_str = interfaces.join("\n");
     let hooks_str = hooks.join("\n");
+    let body_types_str = body_types.join("\n");
+
     // Combine all parts
     let ts_code = ts_string! {
         #imports_str
+
+        // HTTP client with auth support
+        #http_client
+
+        // Body types
+        #body_types_str
 
         // Client
         export const client = {
@@ -135,30 +164,143 @@ fn generate_ts_client_code(
     Ok(formatted)
 }
 
+/// Generate a reusable HTTP client with auth support
+fn generate_http_client() -> String {
+    ts_string! {
+        // Base HTTP client with authentication support
+        class ApiClient {
+            private baseUrl: string = "";
+            private getToken?: () => Promise<string | null>;
+
+            constructor(config?: { baseUrl?: string; getToken?: () => Promise<string | null> }) {
+                this.baseUrl = config?.baseUrl || "";
+                this.getToken = config?.getToken;
+            }
+
+            async request<T>(url: string, options: RequestInit & { requiresAuth?: boolean } = {}): Promise<T> {
+                const headers = new Headers(options.headers as Record<string, string>);
+
+                // Set Content-Type for requests with body
+                if (options.body && !headers.has("Content-Type")) {
+                    headers.set("Content-Type", "application/json");
+                }
+
+                // Add Authorization header if required and token is available
+                if (options.requiresAuth && this.getToken) {
+                    const token = await this.getToken();
+                    if (token) {
+                        headers.set("Authorization", "Bearer " + token);
+                    }
+                }
+
+                const response = await fetch(this.baseUrl+url, {
+                    ...options,
+                    headers,
+                });
+
+                if (!response.ok) {
+                    throw new Error("HTTP error! status: "+response.status);
+                }
+
+                // For 204 No Content responses, return null
+                if (response.status === 204) {
+                    return null as T;
+                }
+
+                return response.json() as Promise<T>;
+            }
+
+            async get<T>(url: string, options: { requiresAuth?: boolean; signal?: AbortSignal } = {}) {
+                return this.request<T>(url, {
+                    method: "GET",
+                    requiresAuth: options.requiresAuth,
+                    signal: options.signal,
+                });
+            }
+
+            async post<T>(url: string, data?: any, options: { requiresAuth?: boolean; signal?: AbortSignal } = {}) {
+                return this.request<T>(url, {
+                    method: "POST",
+                    body: data ? JSON.stringify(data) : undefined,
+                    requiresAuth: options.requiresAuth,
+                    signal: options.signal,
+                });
+            }
+
+            async put<T>(url: string, data?: any, options: { requiresAuth?: boolean; signal?: AbortSignal } = {}) {
+                return this.request<T>(url, {
+                    method: "PUT",
+                    body: data ? JSON.stringify(data) : undefined,
+                    requiresAuth: options.requiresAuth,
+                    signal: options.signal,
+                });
+            }
+
+            async patch<T>(url: string, data?: any, options: { requiresAuth?: boolean; signal?: AbortSignal } = {}) {
+                return this.request<T>(url, {
+                    method: "PATCH",
+                    body: data ? JSON.stringify(data) : undefined,
+                    requiresAuth: options.requiresAuth,
+                    signal: options.signal,
+                });
+            }
+
+            async delete<T>(url: string, data?: any,options: { requiresAuth?: boolean; signal?: AbortSignal } = {}) {
+                return this.request<T>(url, {
+                    method: "DELETE",
+                    body: data ? JSON.stringify(data) : undefined,
+                    requiresAuth: options.requiresAuth,
+                    signal: options.signal,
+                });
+            }
+        }
+
+        // Create default instance
+        export const apiClient = new ApiClient();
+
+        // You can configure the client elsewhere in your app:
+        // apiClient = new ApiClient({
+        //   baseUrl: 'http://localhost:3000',
+        //   getToken: () => authCtx.getToken()
+        // });
+    }
+}
+
 fn generate_ts_client_method<'a>(
     route: &'a RouteInfo,
     method_name: &'a str,
     params: &'a [String],
 ) -> String {
-    let method_upper_str = format!("'{}'", route.method.to_uppercase());
-
+    let method_upper = route.method.to_uppercase();
     let path_template = generate_ts_path_template(&route.path, params);
+
+    // Determine body type - use the extracted body param type or fall back to 'any'
+    let body_type = route.body_param.as_deref().unwrap_or("any");
+    let requires_auth = route.requires_auth;
 
     if params.is_empty() {
         if route.method == "GET" {
             ts_string! {
-                #method_name: () => ({
-                    url: #path_template,
-                    method: #method_upper_str,
-                }),
+                #method_name: async (config?: { signal?: AbortSignal }) => {
+                    const url = #path_template;
+                    return apiClient.get(url, { requiresAuth: #requires_auth, signal: config?.signal });
+                },
             }
         } else {
+            // Use lowercase method names directly instead of method_upper.to_lowercase()
+            let method_call = match route.method.as_str() {
+                "POST" => "post",
+                "PUT" => "put",
+                "PATCH" => "patch",
+                "DELETE" => "delete",
+                _ => "post", // fallback
+            };
+
             ts_string! {
-                #method_name: (body: any) => ({
-                    url: #path_template,
-                    method: #method_upper_str,
-                    body: JSON.stringify(body),
-                }),
+                #method_name: async (body: #body_type, config?: { signal?: AbortSignal }) => {
+                    const url = #path_template;
+                    return apiClient.#method_call(url, body, { requiresAuth: #requires_auth, signal: config?.signal });
+                },
             }
         }
     } else {
@@ -166,23 +308,24 @@ fn generate_ts_client_method<'a>(
 
         if route.method == "GET" {
             ts_string! {
-                #method_name: (params: #params_type) => {
+                #method_name: async (params: #params_type, config?: { signal?: AbortSignal }) => {
                     const url = #path_template;
-                    return {
-                        url,
-                        method: #method_upper_str,
-                    };
+                    return apiClient.get(url, { requiresAuth: #requires_auth, signal: config?.signal });
                 },
             }
         } else {
+            let method_call = match route.method.as_str() {
+                "POST" => "post",
+                "PUT" => "put",
+                "PATCH" => "patch",
+                "DELETE" => "delete",
+                _ => "post",
+            };
+
             ts_string! {
-                #method_name: (params: #params_type, body: any) => {
+                #method_name: async (params: #params_type, body: #body_type, config?: { signal?: AbortSignal }) => {
                     const url = #path_template;
-                    return {
-                        url,
-                        method: #method_upper_str,
-                        body: JSON.stringify(body),
-                    };
+                    return apiClient.#method_call(url, body, { requiresAuth: #requires_auth, signal: config?.signal });
                 },
             }
         }
@@ -246,16 +389,16 @@ fn generate_ts_hook(
     params: &[String],
 ) -> String {
     let method_name_str = format!("\"{method_name}\"");
+    let body_type = route.body_param.as_deref().unwrap_or("any");
+    let requires_auth = route.requires_auth;
+
     if route.method == "GET" {
         if params.is_empty() {
             ts_string! {
                 export function #hook_name(options?: UseQueryOptions<any, Error>) {
                     return useQuery({
                         queryKey: [#method_name_str],
-                        queryFn: () => {
-                            const { url, method } = client.#method_name();
-                            return fetch(url, { method }).then(res => res.json());
-                        },
+                        queryFn: ({ signal }) => client.#method_name({ signal }),
                         ...options,
                     });
                 }
@@ -267,10 +410,7 @@ fn generate_ts_hook(
                 export function #hook_name(params: #params_type, options?: UseQueryOptions<any, Error>) {
                     return useQuery({
                         queryKey: [#method_name_str, params],
-                        queryFn: () => {
-                            const { url, method } = client.#method_name(params);
-                            return fetch(url, { method }).then(res => res.json());
-                        },
+                        queryFn: ({ signal }) => client.#method_name(params, { signal }),
                         ...options,
                     });
                 }
@@ -280,18 +420,9 @@ fn generate_ts_hook(
         // Mutation hook
         if params.is_empty() {
             ts_string! {
-                export function #hook_name(options?: UseMutationOptions<any, Error, any, unknown>) {
+                export function #hook_name(options?: UseMutationOptions<any, Error, #body_type, unknown>) {
                     return useMutation({
-                        mutationFn: (body: any) => {
-                            const { url, method, body: requestBody } = client.#method_name(body);
-                            return fetch(url, {
-                                method,
-                                body: requestBody,
-                                headers: {
-                                    "Content-Type": "application/json",
-                                },
-                            }).then(res => res.json());
-                        },
+                        mutationFn: (body: #body_type) => client.#method_name(body),
                         ...options,
                     });
                 }
@@ -300,18 +431,10 @@ fn generate_ts_hook(
         } else {
             let params_type = format!("{}Params", convert_case_ts(method_name, "pascal"));
             ts_string! {
-                export function #hook_name(options?: UseMutationOptions<any, Error, { params: #params_type, body: any }, unknown>) {
+                export function #hook_name(options?: UseMutationOptions<any, Error, { params: #params_type, body: #body_type }, unknown>) {
                     return useMutation({
-                        mutationFn: (input: { params: #params_type, body: any }) => {
-                            const { url, method, body: requestBody } = client.#method_name(input.params, input.body);
-                            return fetch(url, {
-                                method,
-                                body: requestBody,
-                                headers: {
-                                    "Content-Type": "application/json",
-                                },
-                            }).then(res => res.json());
-                        },
+                        mutationFn: (input: { params: #params_type, body: #body_type }) =>
+                            client.#method_name(input.params, input.body),
                         ...options,
                     });
                 }
@@ -322,7 +445,6 @@ fn generate_ts_hook(
 
 fn format_ts_code(code: &str) -> Result<String, Box<dyn std::error::Error>> {
     // For now, we'll use a simple formatter since deno_ast might be heavy
-    // You can replace this with deno_ast formatting if needed
     Ok(code.to_string())
 }
 
@@ -392,14 +514,25 @@ fn parse_routes_from_file(
 
     let mut routes = Vec::new();
 
-    for item in syntax.items {
+    for item in &syntax.items {
         if let syn::Item::Fn(func) = item {
             if func.sig.ident == "routes" {
-                if let Some(routes_vec) = extract_routes_from_axum_function(&func, config)? {
+                if let Some(routes_vec) = extract_routes_from_axum_function(func, config)? {
                     routes = routes_vec;
                     break;
                 }
             }
+        }
+    }
+
+    // Now extract body parameters and auth requirements from handler functions
+    let handler_info = extract_handler_info(&syntax)?;
+
+    // Update routes with body parameter and auth information
+    for route in &mut routes {
+        if let Some(info) = handler_info.get(&route.handler) {
+            route.body_param = info.body_param.clone();
+            route.requires_auth = info.requires_auth;
         }
     }
 
@@ -408,6 +541,71 @@ fn parse_routes_from_file(
     } else {
         Ok(Some(routes))
     }
+}
+
+/// Extract body parameter types and auth requirements from handler functions
+fn extract_handler_info(
+    syntax: &syn::File,
+) -> Result<HashMap<String, HandlerInfo>, Box<dyn std::error::Error>> {
+    let mut handler_info = HashMap::new();
+
+    for item in &syntax.items {
+        if let syn::Item::Fn(func) = item {
+            let handler_name = func.sig.ident.to_string();
+            let mut body_param = None;
+            let mut requires_auth = false;
+
+            // Look for JsonValidateWithMessage parameters and auth: JWT
+            for input in &func.sig.inputs {
+                if let syn::FnArg::Typed(pat_type) = input {
+                    // Check for body parameters (JsonValidateWithMessage<T>)
+                    if let syn::Type::Path(type_path) = &*pat_type.ty {
+                        if let Some(segment) = type_path.path.segments.last() {
+                            if segment.ident == "JsonValidateWithMessage" {
+                                // Extract the generic type parameter
+                                if let syn::PathArguments::AngleBracketed(generics) =
+                                    &segment.arguments
+                                {
+                                    if let Some(syn::GenericArgument::Type(syn::Type::Path(
+                                        param_type,
+                                    ))) = generics.args.first()
+                                    {
+                                        if let Some(param_segment) = param_type.path.segments.last()
+                                        {
+                                            body_param = Some(param_segment.ident.to_string());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Check for authentication (auth: JWT)
+                    if let syn::Pat::Ident(pat_ident) = &*pat_type.pat {
+                        if pat_ident.ident == "auth" {
+                            if let syn::Type::Path(type_path) = &*pat_type.ty {
+                                if let Some(segment) = type_path.path.segments.last() {
+                                    if segment.ident == "JWT" {
+                                        requires_auth = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            handler_info.insert(
+                handler_name,
+                HandlerInfo {
+                    body_param,
+                    requires_auth,
+                },
+            );
+        }
+    }
+
+    Ok(handler_info)
 }
 
 fn extract_routes_from_axum_function(
@@ -461,8 +659,8 @@ fn extract_routes_from_expr(
                     {
                         let path = extract_string_literal(path_expr)
                             .ok_or("Failed to extract path from add() call")?;
-                        let method = extract_http_method(method_expr)
-                            .ok_or("Failed to extract HTTP method from add() call")?;
+                        let (method, handler) = extract_http_method_and_handler(method_expr)
+                            .ok_or("Failed to extract HTTP method and handler from add() call")?;
 
                         let full_path = if prefix.is_empty() {
                             path.clone()
@@ -476,6 +674,9 @@ fn extract_routes_from_expr(
                             name,
                             path: full_path,
                             method,
+                            handler,
+                            body_param: None,     // Will be filled in later
+                            requires_auth: false, // Will be filled in later
                         });
                     }
                     extract_routes_from_expr(&method_call.receiver, routes, prefix, config)?;
@@ -513,12 +714,22 @@ fn extract_string_literal(expr: &syn::Expr) -> Option<String> {
     None
 }
 
-fn extract_http_method(expr: &syn::Expr) -> Option<String> {
+/// Extract both HTTP method and handler function name
+fn extract_http_method_and_handler(expr: &syn::Expr) -> Option<(String, String)> {
     if let syn::Expr::Call(call_expr) = expr {
         if let syn::Expr::Path(path_expr) = &*call_expr.func {
             if let Some(segment) = path_expr.path.segments.last() {
-                let method_name = segment.ident.to_string();
-                return Some(method_name.to_uppercase());
+                let method_name = segment.ident.to_string().to_uppercase();
+
+                // Extract handler function name from arguments
+                if let Some(handler_expr) = call_expr.args.first() {
+                    if let syn::Expr::Path(handler_path) = &*handler_expr {
+                        if let Some(handler_segment) = handler_path.path.segments.last() {
+                            let handler_name = handler_segment.ident.to_string();
+                            return Some((method_name, handler_name));
+                        }
+                    }
+                }
             }
         }
     }
@@ -607,7 +818,7 @@ fn generate_links_enum(routes: &[RouteInfo], config: &Config) -> String {
     let mut method_arms = Vec::new();
 
     // Use a HashMap to track unique variant names and avoid duplicates
-    let mut unique_variants: HashMap<String, RouteInfo> = HashMap::new();
+    let mut unique_variants: HashMap<String, &RouteInfo> = HashMap::new();
 
     for route in routes {
         let variant_name = create_variant_name(&route.name, config);
@@ -626,7 +837,7 @@ fn generate_links_enum(routes: &[RouteInfo], config: &Config) -> String {
             continue;
         }
 
-        unique_variants.insert(variant_name_str.clone(), route.clone());
+        unique_variants.insert(variant_name_str.clone(), route);
         let route_path = route.path.clone();
         let route_method = route.method.clone();
 
@@ -715,7 +926,16 @@ fn generate_links_enum(routes: &[RouteInfo], config: &Config) -> String {
 
 fn create_variant_name(name: &str, config: &Config) -> proc_macro2::Ident {
     let case = config.variant_case.as_deref().unwrap_or("pascal");
-    let mut result = convert_case(name, case);
+    let mut result = match case.to_lowercase().as_str() {
+        "pascal" | "pascalcase" => name.to_case(Case::Pascal),
+        "camel" | "camelcase" => name.to_case(Case::Camel),
+        "snake" | "snake_case" => name.to_case(Case::Snake),
+        "kebab" | "kebab-case" => name.to_case(Case::Kebab),
+        "title" | "title_case" => name.to_case(Case::Title),
+        "lower" | "lowercase" => name.to_lowercase(),
+        "upper" | "uppercase" => name.to_uppercase(),
+        _ => name.to_case(Case::Pascal), // default
+    };
 
     // Apply prefix and suffix
     if let Some(prefix) = &config.variant_prefix {
@@ -733,21 +953,17 @@ fn create_variant_name(name: &str, config: &Config) -> proc_macro2::Ident {
 
 fn create_field_name(name: &str, config: &Config) -> String {
     let case = config.field_case.as_deref().unwrap_or("snake");
-    let result = convert_case(name, case);
+    let result = match case.to_lowercase().as_str() {
+        "pascal" | "pascalcase" => name.to_case(Case::Pascal),
+        "camel" | "camelcase" => name.to_case(Case::Camel),
+        "snake" | "snake_case" => name.to_case(Case::Snake),
+        "kebab" | "kebab-case" => name.to_case(Case::Kebab),
+        "title" | "title_case" => name.to_case(Case::Title),
+        "lower" | "lowercase" => name.to_lowercase(),
+        "upper" | "uppercase" => name.to_uppercase(),
+        _ => name.to_case(Case::Snake), // default
+    };
     sanitize_identifier(&result)
-}
-
-fn convert_case(input: &str, case: &str) -> String {
-    match case.to_lowercase().as_str() {
-        "pascal" | "pascalcase" => input.to_case(Case::Pascal),
-        "camel" | "camelcase" => input.to_case(Case::Camel),
-        "snake" | "snake_case" => input.to_case(Case::Snake),
-        "kebab" | "kebab-case" => input.to_case(Case::Kebab),
-        "title" | "title_case" => input.to_case(Case::Title),
-        "lower" | "lowercase" => input.to_lowercase(),
-        "upper" | "uppercase" => input.to_uppercase(),
-        _ => input.to_case(Case::Pascal), // default
-    }
 }
 
 fn generate_path_build_code(path_template: &str, fields: &[proc_macro2::Ident]) -> TokenStream {
