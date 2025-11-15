@@ -1,0 +1,274 @@
+use super::super::CodeGenerator;
+use crate::{RouteInfo, config::TypeScriptConfig};
+use std::collections::HashSet;
+use ts_quote::ts_string;
+
+pub struct TypeScriptClientGenerator;
+
+impl CodeGenerator for TypeScriptClientGenerator {
+    type Config = TypeScriptConfig;
+    type Output = String;
+
+    fn generate(
+        routes: &[RouteInfo],
+        _config: &Self::Config,
+    ) -> Result<Self::Output, Box<dyn std::error::Error>> {
+        let mut imports = Vec::new();
+        let mut client_methods = Vec::new();
+        let mut type_imports = HashSet::new();
+
+        // Generate imports
+        imports.push(ts_string! {
+            import { useQuery, useMutation, type UseQueryOptions, type UseMutationOptions } from "@tanstack/react-query";
+        });
+
+        // Collect all unique body types for import
+        for route in routes {
+            if let Some(body_type) = &route.handler_info.body_param {
+                type_imports.insert(body_type.clone());
+            }
+            if let Some(return_type) = &route.handler_info.return_type {
+                type_imports.insert(return_type.clone());
+            }
+        }
+
+        // Generate type imports
+        for type_name in &type_imports {
+            let import = format!("\"../../../bindings/{type_name}\"");
+            imports.push(ts_string! {
+                import { type #type_name } from #import;
+            });
+        }
+
+        // Generate the base HTTP client with auth support
+        let http_client = generate_http_client();
+
+        for route in routes {
+            let method_name = crate::utils::case::convert_to_case(&route.name, "camel");
+            let params = crate::utils::path::extract_parameters_from_path(&route.path);
+
+            // Generate client method
+            let client_method = generate_client_method(route, &method_name, &params);
+            client_methods.push(client_method);
+        }
+
+        let imports_str = imports.join("\n");
+        let client_methods_str = client_methods.join("\n");
+
+        // Combine all parts
+        let ts_code = ts_string! {
+            #imports_str
+
+            // HTTP client with auth support
+            #http_client
+
+            // Client
+            export const client = {
+                #client_methods_str
+            };
+        };
+
+        // Format the TypeScript code
+        let formatted = super::format_ts_code(&ts_code.to_string())?;
+        Ok(formatted)
+    }
+}
+
+fn generate_client_method(route: &RouteInfo, method_name: &str, params: &[String]) -> String {
+    let _method_upper = route.method.to_uppercase();
+    let path_template = generate_ts_path_template(&route.path, params);
+
+    // Use the actual body type or void for no body
+    let body_type = route.handler_info.body_param.as_deref().unwrap_or("void");
+    // Use the actual return type or any as fallback
+    let return_type = route.handler_info.return_type.as_deref().unwrap_or("any");
+    let requires_auth = route.handler_info.requires_auth;
+
+    if params.is_empty() {
+        if route.method == "GET" {
+            ts_string! {
+                #method_name: async (config?: { signal?: AbortSignal }): Promise<#return_type> => {
+                    const url = #path_template;
+                    return apiClient.get<#return_type>(url, { requiresAuth: #requires_auth, signal: config?.signal });
+                },
+            }
+        } else {
+            let method_call = match route.method.as_str() {
+                "POST" => "post",
+                "PUT" => "put",
+                "PATCH" => "patch",
+                "DELETE" => "delete",
+                _ => "post",
+            };
+
+            ts_string! {
+                #method_name: async (body: #body_type, config?: { signal?: AbortSignal }): Promise<#return_type> => {
+                    const url = #path_template;
+                    return apiClient.#method_call<#return_type>(url, body, { requiresAuth: #requires_auth, signal: config?.signal });
+                },
+            }
+        }
+    } else {
+        let params_type = format!(
+            "{}Params",
+            crate::utils::case::convert_to_case(method_name, "pascal")
+        );
+
+        if route.method == "GET" {
+            ts_string! {
+                #method_name: async (params: #params_type, config?: { signal?: AbortSignal }): Promise<#return_type> => {
+                    const url = #path_template;
+                    return apiClient.get<#return_type>(url, { requiresAuth: #requires_auth, signal: config?.signal });
+                },
+            }
+        } else {
+            let method_call = match route.method.as_str() {
+                "POST" => "post",
+                "PUT" => "put",
+                "PATCH" => "patch",
+                "DELETE" => "delete",
+                _ => "post",
+            };
+
+            ts_string! {
+                #method_name: async (params: #params_type, body: #body_type, config?: { signal?: AbortSignal }): Promise<#return_type> => {
+                    const url = #path_template;
+                    return apiClient.#method_call<#return_type>(url, body, { requiresAuth: #requires_auth, signal: config?.signal });
+                },
+            }
+        }
+    }
+}
+
+fn generate_ts_path_template(path: &str, _params: &[String]) -> String {
+    let mut template = String::new();
+    let segments: Vec<&str> = path.split('/').collect();
+
+    for (i, segment) in segments.iter().enumerate() {
+        if segment.is_empty() {
+            continue;
+        }
+
+        if i > 0 {
+            template.push('/');
+        }
+
+        if segment.starts_with('{') && segment.ends_with('}') {
+            let param_name = &segment[1..segment.len() - 1];
+            let ts_param_name = crate::utils::case::convert_to_case(param_name, "camel");
+            template.push_str(&format!("${{params.{}}}", ts_param_name));
+        } else {
+            template.push_str(segment);
+        }
+    }
+
+    let temp = if template.is_empty() {
+        "/".to_string()
+    } else if !template.starts_with('/') {
+        format!("/{}", template)
+    } else {
+        template
+    };
+    format!("`{temp}`")
+}
+
+fn generate_http_client() -> String {
+    ts_string! {
+        // Base HTTP client with authentication support
+        class ApiClient {
+            private baseUrl: string = "";
+            private getToken?: () => Promise<string | null>;
+
+            constructor(config?: { baseUrl?: string; getToken?: () => Promise<string | null> }) {
+                this.baseUrl = config?.baseUrl || "";
+                this.getToken = config?.getToken;
+            }
+
+            async request<T>(url: string, options: RequestInit & { requiresAuth?: boolean } = {}): Promise<T> {
+                const headers = new Headers(options.headers as Record<string, string>);
+
+                // Set Content-Type for requests with body
+                if (options.body && !headers.has("Content-Type")) {
+                    headers.set("Content-Type", "application/json");
+                }
+
+                // Add Authorization header if required and token is available
+                if (options.requiresAuth && this.getToken) {
+                    const token = await this.getToken();
+                    if (token) {
+                        headers.set("Authorization", "Bearer " + token);
+                    }
+                }
+
+                const response = await fetch(this.baseUrl+url, {
+                    ...options,
+                    headers,
+                });
+
+                if (!response.ok) {
+                    throw new Error("HTTP error! status: "+response.status);
+                }
+
+                // For 204 No Content responses, return null
+                if (response.status === 204) {
+                    return null as T;
+                }
+
+                return response.json() as Promise<T>;
+            }
+
+            async get<T>(url: string, options: { requiresAuth?: boolean; signal?: AbortSignal } = {}) {
+                return this.request<T>(url, {
+                    method: "GET",
+                    requiresAuth: options.requiresAuth,
+                    signal: options.signal,
+                });
+            }
+
+            async post<T>(url: string, data?: any, options: { requiresAuth?: boolean; signal?: AbortSignal } = {}) {
+                return this.request<T>(url, {
+                    method: "POST",
+                    body: data ? JSON.stringify(data) : undefined,
+                    requiresAuth: options.requiresAuth,
+                    signal: options.signal,
+                });
+            }
+
+            async put<T>(url: string, data?: any, options: { requiresAuth?: boolean; signal?: AbortSignal } = {}) {
+                return this.request<T>(url, {
+                    method: "PUT",
+                    body: data ? JSON.stringify(data) : undefined,
+                    requiresAuth: options.requiresAuth,
+                    signal: options.signal,
+                });
+            }
+
+            async patch<T>(url: string, data?: any, options: { requiresAuth?: boolean; signal?: AbortSignal } = {}) {
+                return this.request<T>(url, {
+                    method: "PATCH",
+                    body: data ? JSON.stringify(data) : undefined,
+                    requiresAuth: options.requiresAuth,
+                    signal: options.signal,
+                });
+            }
+
+            async delete<T>(url: string, data?: any,options: { requiresAuth?: boolean; signal?: AbortSignal } = {}) {
+                return this.request<T>(url, {
+                    method: "DELETE",
+                    body: data ? JSON.stringify(data) : undefined,
+                    requiresAuth: options.requiresAuth,
+                    signal: options.signal,
+                });
+            }
+        }
+
+        // Create default instance
+        export const apiClient = new ApiClient();
+
+        // You can configure the client elsewhere in your app:
+        // apiClient = new ApiClient({
+        //   baseUrl: 'http://localhost:3000',
+        //   getToken: () => authCtx.getToken()
+        // });
+    }
+}
