@@ -46,6 +46,7 @@ pub struct RouteInfo {
 pub struct HandlerInfo {
     pub body_param: Option<String>,
     pub requires_auth: bool,
+    pub return_type: Option<String>,
 }
 
 /// Main function to generate links enum from controller files
@@ -58,7 +59,7 @@ pub fn generate_links(config: &Config) -> Result<String, Box<dyn std::error::Err
     // Generate TypeScript client if requested
     if config.generate_typescript_client.unwrap_or(false) {
         if let Some(ts_output) = &config.typescript_client_output {
-            let ts_code = generate_ts_client_code(&routes, config)?;
+            let ts_code = generate_ts_client_code(&routes)?;
             fs::write(ts_output, ts_code)?;
             println!(
                 "cargo:warning=Generated TypeScript client at: {}",
@@ -73,14 +74,11 @@ pub fn generate_links(config: &Config) -> Result<String, Box<dyn std::error::Err
 /// Generate TypeScript HTTP client compatible with tanstack-query
 pub fn generate_ts_client(config: &Config) -> Result<String, Box<dyn std::error::Error>> {
     let routes = scan_controllers_folder(config)?;
-    let ts_code = generate_ts_client_code(&routes, config)?;
+    let ts_code = generate_ts_client_code(&routes)?;
     Ok(ts_code)
 }
 
-fn generate_ts_client_code(
-    routes: &[RouteInfo],
-    config: &Config,
-) -> Result<String, Box<dyn std::error::Error>> {
+fn generate_ts_client_code(routes: &[RouteInfo]) -> Result<String, Box<dyn std::error::Error>> {
     let mut imports = Vec::new();
     let mut client_methods = Vec::new();
     let mut hooks = Vec::new();
@@ -96,6 +94,9 @@ fn generate_ts_client_code(
     for route in routes {
         if let Some(body_type) = &route.handler_info.body_param {
             type_imports.insert(body_type.clone());
+        }
+        if let Some(return_type) = &route.handler_info.return_type {
+            type_imports.insert(return_type.clone());
         }
     }
 
@@ -266,19 +267,21 @@ fn generate_ts_client_method<'a>(
     method_name: &'a str,
     params: &'a [String],
 ) -> String {
-    let method_upper = route.method.to_uppercase();
+    let _method_upper = route.method.to_uppercase();
     let path_template = generate_ts_path_template(&route.path, params);
 
     // Use the actual body type or void for no body
     let body_type = route.handler_info.body_param.as_deref().unwrap_or("void");
+    // Use the actual return type or any as fallback
+    let return_type = route.handler_info.return_type.as_deref().unwrap_or("any");
     let requires_auth = route.handler_info.requires_auth;
 
     if params.is_empty() {
         if route.method == "GET" {
             ts_string! {
-                #method_name: async (config?: { signal?: AbortSignal }) => {
+                #method_name: async (config?: { signal?: AbortSignal }): Promise<#return_type> => {
                     const url = #path_template;
-                    return apiClient.get(url, { requiresAuth: #requires_auth, signal: config?.signal });
+                    return apiClient.get<#return_type>(url, { requiresAuth: #requires_auth, signal: config?.signal });
                 },
             }
         } else {
@@ -291,9 +294,9 @@ fn generate_ts_client_method<'a>(
             };
 
             ts_string! {
-                #method_name: async (body: #body_type, config?: { signal?: AbortSignal }) => {
+                #method_name: async (body: #body_type, config?: { signal?: AbortSignal }): Promise<#return_type> => {
                     const url = #path_template;
-                    return apiClient.#method_call(url, body, { requiresAuth: #requires_auth, signal: config?.signal });
+                    return apiClient.#method_call<#return_type>(url, body, { requiresAuth: #requires_auth, signal: config?.signal });
                 },
             }
         }
@@ -302,9 +305,9 @@ fn generate_ts_client_method<'a>(
 
         if route.method == "GET" {
             ts_string! {
-                #method_name: async (params: #params_type, config?: { signal?: AbortSignal }) => {
+                #method_name: async (params: #params_type, config?: { signal?: AbortSignal }): Promise<#return_type> => {
                     const url = #path_template;
-                    return apiClient.get(url, { requiresAuth: #requires_auth, signal: config?.signal });
+                    return apiClient.get<#return_type>(url, { requiresAuth: #requires_auth, signal: config?.signal });
                 },
             }
         } else {
@@ -317,16 +320,16 @@ fn generate_ts_client_method<'a>(
             };
 
             ts_string! {
-                #method_name: async (params: #params_type, body: #body_type, config?: { signal?: AbortSignal }) => {
+                #method_name: async (params: #params_type, body: #body_type, config?: { signal?: AbortSignal }): Promise<#return_type> => {
                     const url = #path_template;
-                    return apiClient.#method_call(url, body, { requiresAuth: #requires_auth, signal: config?.signal });
+                    return apiClient.#method_call<#return_type>(url, body, { requiresAuth: #requires_auth, signal: config?.signal });
                 },
             }
         }
     }
 }
 
-fn generate_ts_path_template(path: &str, params: &[String]) -> String {
+fn generate_ts_path_template(path: &str, _params: &[String]) -> String {
     let mut template = String::new();
     let segments: Vec<&str> = path.split('/').collect();
 
@@ -384,12 +387,13 @@ fn generate_ts_hook(
 ) -> String {
     let method_name_str = format!("\"{method_name}\"");
     let body_type = route.handler_info.body_param.as_deref().unwrap_or("void");
-    let requires_auth = route.handler_info.requires_auth;
+    let return_type = route.handler_info.return_type.as_deref().unwrap_or("any");
+    let _requires_auth = route.handler_info.requires_auth;
 
     if route.method == "GET" {
         if params.is_empty() {
             ts_string! {
-                export function #hook_name(options?: UseQueryOptions<any, Error>) {
+                export function #hook_name(options?: UseQueryOptions<#return_type, Error>) {
                     return useQuery({
                         queryKey: [#method_name_str],
                         queryFn: ({ signal }) => client.#method_name({ signal }),
@@ -401,7 +405,7 @@ fn generate_ts_hook(
         } else {
             let params_type = format!("{}Params", convert_case_ts(method_name, "pascal"));
             ts_string! {
-                export function #hook_name(params: #params_type, options?: UseQueryOptions<any, Error>) {
+                export function #hook_name(params: #params_type, options?: UseQueryOptions<#return_type, Error>) {
                     return useQuery({
                         queryKey: [#method_name_str, params],
                         queryFn: ({ signal }) => client.#method_name(params, { signal }),
@@ -411,10 +415,10 @@ fn generate_ts_hook(
             }
         }
     } else {
-        // Mutation hook - use proper body type
+        // Mutation hook - use proper body and return types
         if params.is_empty() {
             ts_string! {
-                export function #hook_name(options?: UseMutationOptions<any, Error, #body_type, unknown>) {
+                export function #hook_name(options?: UseMutationOptions<#return_type, Error, #body_type, unknown>) {
                     return useMutation({
                         mutationFn: (body: #body_type) => client.#method_name(body),
                         ...options,
@@ -425,7 +429,7 @@ fn generate_ts_hook(
         } else {
             let params_type = format!("{}Params", convert_case_ts(method_name, "pascal"));
             ts_string! {
-                export function #hook_name(options?: UseMutationOptions<any, Error, { params: #params_type, body: #body_type }, unknown>) {
+                export function #hook_name(options?: UseMutationOptions<#return_type, Error, { params: #params_type, body: #body_type }, unknown>) {
                     return useMutation({
                         mutationFn: (input: { params: #params_type, body: #body_type }) =>
                             client.#method_name(input.params, input.body),
@@ -546,6 +550,7 @@ fn extract_handler_info(
             let handler_name = func.sig.ident.to_string();
             let mut body_param = None;
             let mut requires_auth = false;
+            let mut return_type = None;
 
             // Look for Json, JsonValidate, and JsonValidateWithMessage parameters
             for input in &func.sig.inputs {
@@ -593,11 +598,22 @@ fn extract_handler_info(
                 }
             }
 
+            // First try to extract return type from function body analysis
+            return_type = extract_return_type_from_body(func);
+
+            // If body analysis didn't work, fall back to signature analysis
+            if return_type.is_none() {
+                if let syn::ReturnType::Type(_, return_ty) = &func.sig.output {
+                    return_type = extract_return_type(return_ty);
+                }
+            }
+
             handler_info.insert(
                 handler_name,
                 HandlerInfo {
                     body_param,
                     requires_auth,
+                    return_type,
                 },
             );
         }
@@ -605,7 +621,279 @@ fn extract_handler_info(
 
     Ok(handler_info)
 }
+fn extract_return_type(return_ty: &syn::Type) -> Option<String> {
+    // Check guarded patterns first
+    if let syn::Type::Path(type_path) = return_ty {
+        if is_result_type(type_path) {
+            return extract_type_from_generic(type_path, 0); // First type parameter is Ok type
+        }
+        if is_json_type(type_path) {
+            return extract_type_from_generic(type_path, 0); // The type inside Json
+        }
+    }
 
+    match return_ty {
+        // Direct type like -> SwitchResponse
+        syn::Type::Path(type_path) => {
+            if let Some(segment) = type_path.path.segments.last() {
+                Some(segment.ident.to_string())
+            } else {
+                None
+            }
+        }
+        // impl IntoResponse or other complex types - we can't easily determine
+        syn::Type::ImplTrait(_) => None,
+        _ => None,
+    }
+}
+/// Extract return type by analyzing the function body to find format::json calls
+fn extract_return_type_from_body(func: &syn::ItemFn) -> Option<String> {
+    let mut visitor = ReturnTypeVisitor::default();
+    visitor.visit_item_fn(func);
+    visitor.found_type
+}
+
+#[derive(Default)]
+struct ReturnTypeVisitor {
+    found_type: Option<String>,
+}
+
+impl ReturnTypeVisitor {
+    fn visit_expr(&mut self, expr: &syn::Expr) {
+        if self.found_type.is_some() {
+            return;
+        }
+
+        match expr {
+            // format::json(Type::from(...))
+            syn::Expr::Call(call_expr) => {
+                if let syn::Expr::Path(path_expr) = &*call_expr.func {
+                    if let Some(segment) = path_expr.path.segments.last() {
+                        if segment.ident == "json" {
+                            // This is format::json call
+                            if let Some(first_arg) = call_expr.args.first() {
+                                self.visit_conversion_expr(first_arg);
+                                return; // Found our type, no need to continue
+                            }
+                        }
+                    }
+                }
+
+                // Also visit all arguments recursively
+                for arg in &call_expr.args {
+                    self.visit_expr(arg);
+                }
+            }
+            // Return statements
+            syn::Expr::Return(return_expr) => {
+                if let Some(expr) = &return_expr.expr {
+                    self.visit_expr(expr);
+                }
+            }
+            // Method calls
+            syn::Expr::MethodCall(method_call) => {
+                self.visit_expr(&method_call.receiver);
+                for arg in &method_call.args {
+                    self.visit_expr(arg);
+                }
+            }
+            // Block expressions (like if blocks, match arms, etc.)
+            syn::Expr::Block(block_expr) => {
+                for stmt in &block_expr.block.stmts {
+                    self.visit_stmt(stmt);
+                }
+                // Check for tail expression (last statement without semicolon)
+                if let Some(syn::Stmt::Expr(expr, _)) = block_expr.block.stmts.last() {
+                    self.visit_expr(expr);
+                }
+            }
+            // If expressions
+            syn::Expr::If(if_expr) => {
+                self.visit_expr(&if_expr.cond);
+                // Visit the then branch as a block
+                for stmt in &if_expr.then_branch.stmts {
+                    self.visit_stmt(stmt);
+                }
+                // Check for tail expression in then branch
+                if let Some(syn::Stmt::Expr(expr, _)) = if_expr.then_branch.stmts.last() {
+                    self.visit_expr(expr);
+                }
+                if let Some((_, else_expr)) = &if_expr.else_branch {
+                    self.visit_expr(else_expr);
+                }
+            }
+            // Match expressions
+            syn::Expr::Match(match_expr) => {
+                self.visit_expr(&match_expr.expr);
+                for arm in &match_expr.arms {
+                    self.visit_expr(&arm.body);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn visit_conversion_expr(&mut self, expr: &syn::Expr) {
+        match expr {
+            // Type::from(value)
+            syn::Expr::Call(call_expr) => {
+                if let syn::Expr::Path(path_expr) = &*call_expr.func {
+                    let path = &path_expr.path;
+                    // Look for patterns like "SwitchResponse::from"
+                    if path.segments.len() >= 2 {
+                        if let Some(segment) = path.segments.iter().nth(path.segments.len() - 2) {
+                            self.found_type = Some(segment.ident.to_string());
+                        }
+                    } else if let Some(segment) = path.segments.last() {
+                        // Direct constructor call: Type(value)
+                        self.found_type = Some(segment.ident.to_string());
+                    }
+                }
+            }
+            // Method calls on variables (like value.into())
+            syn::Expr::MethodCall(method_call) => {
+                if method_call.method == "into" {
+                    // For into(), we can't easily determine the target type
+                    // Skip and let signature analysis handle it
+                }
+            }
+            // Simple path (like a variable name)
+            syn::Expr::Path(_path_expr) => {
+                // If we have a simple variable, we can't determine its type
+                // without type inference, so we skip it
+            }
+            _ => {}
+        }
+    }
+
+    fn visit_stmt(&mut self, stmt: &syn::Stmt) {
+        if self.found_type.is_some() {
+            return;
+        }
+
+        match stmt {
+            syn::Stmt::Expr(expr, _) => {
+                self.visit_expr(expr);
+            }
+            syn::Stmt::Local(local) => {
+                if let Some(init) = &local.init {
+                    self.visit_expr(&init.expr);
+                }
+            }
+            // Skip Item and Macro statements for now
+            syn::Stmt::Item(_) | syn::Stmt::Macro(_) => {}
+        }
+    }
+
+    fn visit_item_fn(&mut self, func: &syn::ItemFn) {
+        for stmt in &func.block.stmts {
+            self.visit_stmt(stmt);
+        }
+        // Check for tail expression in the function block
+        if let Some(syn::Stmt::Expr(expr, _)) = func.block.stmts.last() {
+            self.visit_expr(expr);
+        }
+    }
+}
+/// Extract the type from format::json(Type::from(...)) or similar patterns
+fn extract_type_from_format_json_call(expr: &syn::Expr) -> Option<String> {
+    match expr {
+        // format::json(SwitchResponse::from(item))
+        syn::Expr::Call(call_expr) => {
+            if let syn::Expr::Path(path_expr) = &*call_expr.func {
+                if is_format_json_path(&path_expr.path) {
+                    if let Some(first_arg) = call_expr.args.first() {
+                        return extract_type_from_conversion_call(first_arg);
+                    }
+                }
+            }
+        }
+        // Return statement: return format::json(...)
+        syn::Expr::Return(return_expr) => {
+            if let Some(expr) = &return_expr.expr {
+                return extract_type_from_format_json_call(expr);
+            }
+        }
+        _ => {}
+    }
+
+    None
+}
+
+/// Extract type from conversion patterns like SwitchResponse::from(item)
+fn extract_type_from_conversion_call(expr: &syn::Expr) -> Option<String> {
+    match expr {
+        // SwitchResponse::from(item)
+        syn::Expr::Call(call_expr) => {
+            if let syn::Expr::Path(path_expr) = &*call_expr.func {
+                if let Some(segment) = path_expr.path.segments.last() {
+                    if segment.ident == "from" {
+                        // Get the type from the path before ::from
+                        let type_path = &path_expr.path;
+                        if type_path.segments.len() > 1 {
+                            if let Some(type_segment) =
+                                type_path.segments.iter().nth(type_path.segments.len() - 2)
+                            {
+                                return Some(type_segment.ident.to_string());
+                            }
+                        }
+                    } else {
+                        // Direct type constructor like SwitchResponse(item)
+                        return Some(segment.ident.to_string());
+                    }
+                }
+            }
+        }
+        // Variable that might be of the target type
+        syn::Expr::Path(_) => {
+            // This is trickier - we'd need type inference
+            // For now, return None and rely on other methods
+            return None;
+        }
+        _ => {}
+    }
+
+    None
+}
+/// Check if a type path is Result<T, E>
+fn is_result_type(type_path: &syn::TypePath) -> bool {
+    if let Some(segment) = type_path.path.segments.last() {
+        segment.ident == "Result"
+    } else {
+        false
+    }
+}
+
+/// Check if a type path is Json<T>
+fn is_json_type(type_path: &syn::TypePath) -> bool {
+    if let Some(segment) = type_path.path.segments.last() {
+        segment.ident == "Json"
+    } else {
+        false
+    }
+}
+fn is_format_json_path(path: &syn::Path) -> bool {
+    if let Some(segment) = path.segments.last() {
+        segment.ident == "json"
+    } else {
+        false
+    }
+}
+/// Extract type from generic parameters at the given index
+fn extract_type_from_generic(type_path: &syn::TypePath, index: usize) -> Option<String> {
+    if let Some(segment) = type_path.path.segments.last() {
+        if let syn::PathArguments::AngleBracketed(generics) = &segment.arguments {
+            if let Some(syn::GenericArgument::Type(syn::Type::Path(param_type))) =
+                generics.args.iter().nth(index)
+            {
+                if let Some(param_segment) = param_type.path.segments.last() {
+                    return Some(param_segment.ident.to_string());
+                }
+            }
+        }
+    }
+    None
+}
 fn extract_routes_from_axum_function(
     func: &syn::ItemFn,
     config: &Config,
@@ -634,14 +922,14 @@ fn extract_routes_from_expr(
     expr: &syn::Expr,
     routes: &mut Vec<RouteInfo>,
     prefix: &mut String,
-    config: &Config,
+    _config: &Config,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match expr {
         syn::Expr::MethodCall(method_call) => {
             let method_name = method_call.method.to_string();
 
             // FIRST process the receiver to establish context (including any prefixes)
-            extract_routes_from_expr(&method_call.receiver, routes, prefix, config)?;
+            extract_routes_from_expr(&method_call.receiver, routes, prefix, _config)?;
 
             // THEN process the current method call
             match method_name.as_str() {
@@ -670,7 +958,7 @@ fn extract_routes_from_expr(
                         // Build full path with current prefix
                         let full_path = build_full_path(prefix, &path);
 
-                        let name = generate_route_name(&full_path, &method, config);
+                        let name = generate_route_name(&full_path, &method, _config);
 
                         routes.push(RouteInfo {
                             name,
@@ -680,6 +968,7 @@ fn extract_routes_from_expr(
                             handler_info: HandlerInfo {
                                 body_param: None,
                                 requires_auth: false,
+                                return_type: None,
                             },
                         });
                     }
@@ -689,8 +978,8 @@ fn extract_routes_from_expr(
         }
         syn::Expr::Call(call_expr) => {
             // Handle Routes::new() call - reset prefix
-            if let syn::Expr::Path(path_expr) = &*call_expr.func {
-                if let Some(segment) = path_expr.path.segments.last() {
+            if let syn::Expr::Path(func_path) = &*call_expr.func {
+                if let Some(segment) = func_path.path.segments.last() {
                     if segment.ident == "new" {
                         *prefix = String::new(); // Reset prefix for new chain
                     }
@@ -723,8 +1012,8 @@ fn extract_string_literal(expr: &syn::Expr) -> Option<String> {
 /// Extract both HTTP method and handler function name
 fn extract_http_method_and_handler(expr: &syn::Expr) -> Option<(String, String)> {
     if let syn::Expr::Call(call_expr) = expr {
-        if let syn::Expr::Path(path_expr) = &*call_expr.func {
-            if let Some(segment) = path_expr.path.segments.last() {
+        if let syn::Expr::Path(func_path) = &*call_expr.func {
+            if let Some(segment) = func_path.path.segments.last() {
                 let method_name = segment.ident.to_string().to_uppercase();
 
                 // Extract handler function name from arguments
