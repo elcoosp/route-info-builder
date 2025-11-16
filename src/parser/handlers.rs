@@ -93,7 +93,7 @@ impl ReturnTypeVisitor {
                     // Handle Vec::<T>::new() pattern - convert to Array<T>
                     if let Some(vec_type) = self.extract_vec_type(path) {
                         self.found_type = Some(vec_type);
-                        self.is_importable = false; // Array is a built-in type, not importable
+                        self.is_importable = true;
                         return;
                     }
 
@@ -126,8 +126,8 @@ impl ReturnTypeVisitor {
         }
     }
 
-    /// Extract Vec type and convert to Array<T> format
-    fn extract_vec_type(&self, path: &syn::Path) -> Option<String> {
+    // In the extract_vec_type method, update to mark the inner type as importable
+    fn extract_vec_type(&mut self, path: &syn::Path) -> Option<String> {
         // Look for Vec::<T>::new pattern
         if path.segments.len() >= 2 {
             if let Some(vec_segment) = path.segments.first() {
@@ -137,8 +137,15 @@ impl ReturnTypeVisitor {
                             generics.args.first()
                         {
                             if let Some(inner_segment) = type_path.path.segments.last() {
+                                let inner_type = inner_segment.ident.to_string();
+
+                                // Check if the inner type is importable (not a built-in)
+                                if !ReturnTypeVisitor::is_builtin_type_rust(&inner_type) {
+                                    self.is_importable = true;
+                                }
+
                                 // Convert Vec<T> to Array<T>
-                                return Some(format!("Array<{}>", inner_segment.ident));
+                                return Some(format!("Array<{}>", inner_type));
                             }
                         }
                     }
@@ -147,7 +154,28 @@ impl ReturnTypeVisitor {
         }
         None
     }
-
+    fn is_builtin_type_rust(type_name: &str) -> bool {
+        matches!(
+            type_name,
+            "i8" | "i16"
+                | "i32"
+                | "i64"
+                | "i128"
+                | "isize"
+                | "u8"
+                | "u16"
+                | "u32"
+                | "u64"
+                | "u128"
+                | "usize"
+                | "f32"
+                | "f64"
+                | "bool"
+                | "char"
+                | "str"
+                | "String"
+        )
+    }
     fn visit_stmt(&mut self, stmt: &syn::Stmt) {
         if self.found_type.is_some() {
             return;

@@ -25,20 +25,17 @@ impl CodeGenerator for TypeScriptClientGenerator {
         imports.push(ts_string! {
             import { TOKEN_KEY } from "@/hooks/use-auth";
         });
-        // Collect all unique body types for import
+        // Collect all unique body types and return types for import
         for route in routes {
+            // Handle body types
             if let Some(body_type) = &route.handler_info.body_param {
-                // Check if it's a generic type like Array<T> - don't import built-in types
-                if !is_builtin_type(body_type) {
-                    type_imports.insert(body_type.clone());
-                }
+                extract_importable_types(body_type, &mut type_imports);
             }
+
+            // Handle return types
             if let Some(return_type) = &route.handler_info.return_type.found_type {
                 if route.handler_info.return_type.is_importable {
-                    // Check if it's a generic type like Array<T> - don't import built-in types
-                    if !is_builtin_type(return_type) {
-                        type_imports.insert(return_type.clone());
-                    }
+                    extract_importable_types(return_type, &mut type_imports);
                 }
             }
         }
@@ -293,12 +290,43 @@ fn generate_http_client() -> String {
     }
 }
 
+/// Extract importable types from type strings, handling generics like Array<T>
+fn extract_importable_types(type_str: &str, imports: &mut HashSet<String>) {
+    // Check if this is a generic type like Array<T>
+    if let Some(inner_type) = extract_generic_inner_type(type_str) {
+        // Recursively extract inner types (for nested generics)
+        extract_importable_types(&inner_type, imports);
+    } else if !is_builtin_type(type_str) {
+        // Only add non-builtin types
+        imports.insert(type_str.to_string());
+    }
+}
+
+/// Extract the inner type from generic types like Array<T>, Option<T>, etc.
+fn extract_generic_inner_type(type_str: &str) -> Option<String> {
+    if type_str.starts_with("Array<") && type_str.ends_with('>') {
+        Some(type_str[6..type_str.len() - 1].to_string())
+    } else if type_str.starts_with("Option<") && type_str.ends_with('>') {
+        Some(type_str[7..type_str.len() - 1].to_string())
+    } else if type_str.starts_with("Result<") && type_str.ends_with('>') {
+        // For Result<T, E>, we only care about the success type T
+        let inner = &type_str[7..type_str.len() - 1];
+        inner.split(',').next().map(|s| s.trim().to_string())
+    } else {
+        None
+    }
+}
+
 /// Check if a type is a built-in TypeScript type that shouldn't be imported
 fn is_builtin_type(type_name: &str) -> bool {
-    type_name.starts_with("Array<")
-        || type_name == "string"
-        || type_name == "number"
-        || type_name == "boolean"
-        || type_name == "any"
-        || type_name == "void"
+    type_name == "string" ||
+    type_name == "number" ||
+    type_name == "boolean" ||
+    type_name == "any" ||
+    type_name == "void" ||
+    type_name == "unknown" ||
+    type_name == "null" ||
+    type_name == "undefined" ||
+    type_name == "Array" ||  // Array without generic is built-in
+    type_name == "Promise" // Promise is built-in
 }
