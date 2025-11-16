@@ -12,17 +12,8 @@ impl CodeGenerator for TypeScriptHooksGenerator {
         routes: &[RouteInfo],
         _config: &Self::Config,
     ) -> Result<Self::Output, Box<dyn std::error::Error>> {
-        let mut imports = Vec::new();
         let mut hooks = Vec::new();
         let mut interfaces = Vec::new();
-
-        // Add imports for Tanstack Query and client with ApiError
-        imports.push(ts_string! {
-            import { useQuery, useMutation, type UseQueryOptions, type UseMutationOptions } from "@tanstack/react-query";
-        });
-        imports.push(ts_string! {
-            import { client, type ApiError } from "./client";
-        });
 
         for route in routes {
             let method_name = crate::utils::case::convert_to_case(&route.name, "camel");
@@ -43,14 +34,11 @@ impl CodeGenerator for TypeScriptHooksGenerator {
             hooks.push(hook);
         }
 
-        let imports_str = imports.join("\n");
         let interfaces_str = interfaces.join("\n");
         let hooks_str = hooks.join("\n");
 
         // Combine all parts
         let ts_code = ts_string! {
-            #imports_str
-
             // Interfaces
             #interfaces_str
 
