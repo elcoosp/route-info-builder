@@ -30,8 +30,10 @@ impl CodeGenerator for TypeScriptClientGenerator {
             if let Some(body_type) = &route.handler_info.body_param {
                 type_imports.insert(body_type.clone());
             }
-            if let Some(return_type) = &route.handler_info.return_type {
-                type_imports.insert(return_type.clone());
+            if let Some(return_type) = &route.handler_info.return_type.found_type {
+                if route.handler_info.return_type.is_importable {
+                    type_imports.insert(return_type.clone());
+                }
             }
         }
 
@@ -85,7 +87,12 @@ fn generate_client_method(route: &RouteInfo, method_name: &str, params: &[String
     // Use the actual body type or void for no body
     let body_type = route.handler_info.body_param.as_deref().unwrap_or("void");
     // Use the actual return type or any as fallback
-    let return_type = route.handler_info.return_type.as_deref().unwrap_or("any");
+    let return_type = route
+        .handler_info
+        .return_type
+        .found_type
+        .as_deref()
+        .unwrap_or("any");
     let requires_auth = route.handler_info.requires_auth;
 
     if params.is_empty() {

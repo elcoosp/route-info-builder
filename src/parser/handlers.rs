@@ -2,9 +2,10 @@ use super::HandlerInfo;
 use std::collections::HashMap;
 use syn::Pat;
 
-#[derive(Default)]
-struct ReturnTypeVisitor {
-    found_type: Option<String>,
+#[derive(Default, Debug, PartialEq, Eq, Hash, Clone)]
+pub struct ReturnTypeVisitor {
+    pub found_type: Option<String>,
+    pub is_importable: bool,
 }
 
 impl ReturnTypeVisitor {
@@ -88,14 +89,24 @@ impl ReturnTypeVisitor {
             syn::Expr::Call(call_expr) => {
                 if let syn::Expr::Path(path_expr) = &*call_expr.func {
                     let path = &path_expr.path;
+
+                    // Handle Vec::<T>::new() pattern - convert to Array<T>
+                    if let Some(vec_type) = self.extract_vec_type(path) {
+                        self.found_type = Some(vec_type);
+                        self.is_importable = false; // Array is a built-in type, not importable
+                        return;
+                    }
+
                     // Look for patterns like "SwitchResponse::from"
                     if path.segments.len() >= 2 {
                         if let Some(segment) = path.segments.iter().nth(path.segments.len() - 2) {
                             self.found_type = Some(segment.ident.to_string());
+                            self.is_importable = true; // Custom types are importable
                         }
                     } else if let Some(segment) = path.segments.last() {
                         // Direct constructor call: Type(value)
                         self.found_type = Some(segment.ident.to_string());
+                        self.is_importable = true; // Custom types are importable
                     }
                 }
             }
@@ -113,6 +124,28 @@ impl ReturnTypeVisitor {
             }
             _ => {}
         }
+    }
+
+    /// Extract Vec type and convert to Array<T> format
+    fn extract_vec_type(&self, path: &syn::Path) -> Option<String> {
+        // Look for Vec::<T>::new pattern
+        if path.segments.len() >= 2 {
+            if let Some(vec_segment) = path.segments.first() {
+                if vec_segment.ident == "Vec" {
+                    if let syn::PathArguments::AngleBracketed(generics) = &vec_segment.arguments {
+                        if let Some(syn::GenericArgument::Type(syn::Type::Path(type_path))) =
+                            generics.args.first()
+                        {
+                            if let Some(inner_segment) = type_path.path.segments.last() {
+                                // Convert Vec<T> to Array<T>
+                                return Some(format!("Array<{}>", inner_segment.ident));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 
     fn visit_stmt(&mut self, stmt: &syn::Stmt) {
@@ -156,7 +189,7 @@ pub fn extract_handler_info(
             let handler_name = func.sig.ident.to_string();
             let mut body_param = None;
             let mut requires_auth = false;
-            let mut return_type = None;
+            let mut return_type = ReturnTypeVisitor::default();
 
             // Look for Json, JsonValidate, and JsonValidateWithMessage parameters
             for input in &func.sig.inputs {
@@ -222,8 +255,8 @@ pub fn extract_handler_info(
 }
 
 /// Extract return type by analyzing the function body to find format::json calls
-fn extract_return_type_from_body(func: &syn::ItemFn) -> Option<String> {
+fn extract_return_type_from_body(func: &syn::ItemFn) -> ReturnTypeVisitor {
     let mut visitor = ReturnTypeVisitor::default();
     visitor.visit_item_fn(func);
-    visitor.found_type
+    visitor
 }

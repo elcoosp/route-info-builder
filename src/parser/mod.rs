@@ -1,6 +1,7 @@
 mod handlers;
 
 use crate::config::Config;
+use crate::parser::handlers::ReturnTypeVisitor;
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -18,7 +19,7 @@ pub struct RouteInfo {
 pub struct HandlerInfo {
     pub body_param: Option<String>,
     pub requires_auth: bool,
-    pub return_type: Option<String>,
+    pub return_type: handlers::ReturnTypeVisitor,
 }
 
 pub fn scan_controllers_folder(
@@ -185,7 +186,7 @@ fn extract_routes_from_expr(
                             handler_info: HandlerInfo {
                                 body_param: None,
                                 requires_auth: false,
-                                return_type: None,
+                                return_type: ReturnTypeVisitor::default(),
                             },
                         });
                     }

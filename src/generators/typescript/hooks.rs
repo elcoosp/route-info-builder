@@ -81,7 +81,12 @@ fn generate_ts_hook(
 ) -> String {
     let method_name_str = format!("\"{method_name}\"");
     let body_type = route.handler_info.body_param.as_deref().unwrap_or("void");
-    let return_type = route.handler_info.return_type.as_deref().unwrap_or("any");
+    let return_type = route
+        .handler_info
+        .return_type
+        .found_type
+        .as_deref()
+        .unwrap_or("any");
     let _requires_auth = route.handler_info.requires_auth;
 
     if route.method == "GET" {
