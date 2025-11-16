@@ -1,6 +1,6 @@
 use super::HandlerInfo;
 use std::collections::HashMap;
-use syn::{Pat, ReturnType, visit::Visit};
+use syn::Pat;
 
 #[derive(Default)]
 struct ReturnTypeVisitor {
@@ -207,13 +207,6 @@ pub fn extract_handler_info(
             // First try to extract return type from function body analysis
             return_type = extract_return_type_from_body(func);
 
-            // If body analysis didn't work, fall back to signature analysis
-            if return_type.is_none() {
-                if let ReturnType::Type(_, return_ty) = &func.sig.output {
-                    return_type = extract_return_type(return_ty);
-                }
-            }
-
             handler_info.insert(
                 handler_name,
                 HandlerInfo {
@@ -228,69 +221,9 @@ pub fn extract_handler_info(
     Ok(handler_info)
 }
 
-fn extract_return_type(return_ty: &syn::Type) -> Option<String> {
-    // Check guarded patterns first
-    if let syn::Type::Path(type_path) = return_ty {
-        if is_result_type(type_path) {
-            return extract_type_from_generic(type_path, 0); // First type parameter is Ok type
-        }
-        if is_json_type(type_path) {
-            return extract_type_from_generic(type_path, 0); // The type inside Json
-        }
-    }
-
-    match return_ty {
-        // Direct type like -> SwitchResponse
-        syn::Type::Path(type_path) => {
-            if let Some(segment) = type_path.path.segments.last() {
-                Some(segment.ident.to_string())
-            } else {
-                None
-            }
-        }
-        // impl IntoResponse or other complex types - we can't easily determine
-        syn::Type::ImplTrait(_) => None,
-        _ => None,
-    }
-}
-
 /// Extract return type by analyzing the function body to find format::json calls
 fn extract_return_type_from_body(func: &syn::ItemFn) -> Option<String> {
     let mut visitor = ReturnTypeVisitor::default();
     visitor.visit_item_fn(func);
     visitor.found_type
-}
-
-/// Check if a type path is Result<T, E>
-fn is_result_type(type_path: &syn::TypePath) -> bool {
-    if let Some(segment) = type_path.path.segments.last() {
-        segment.ident == "Result"
-    } else {
-        false
-    }
-}
-
-/// Check if a type path is Json<T>
-fn is_json_type(type_path: &syn::TypePath) -> bool {
-    if let Some(segment) = type_path.path.segments.last() {
-        segment.ident == "Json"
-    } else {
-        false
-    }
-}
-
-/// Extract type from generic parameters at the given index
-fn extract_type_from_generic(type_path: &syn::TypePath, index: usize) -> Option<String> {
-    if let Some(segment) = type_path.path.segments.last() {
-        if let syn::PathArguments::AngleBracketed(generics) = &segment.arguments {
-            if let Some(syn::GenericArgument::Type(syn::Type::Path(param_type))) =
-                generics.args.iter().nth(index)
-            {
-                if let Some(param_segment) = param_type.path.segments.last() {
-                    return Some(param_segment.ident.to_string());
-                }
-            }
-        }
-    }
-    None
 }

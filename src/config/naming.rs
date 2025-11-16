@@ -1,5 +1,3 @@
-use convert_case::{Case, Casing};
-
 pub fn generate_route_name(path: &str, method: &str, config: &super::NamingConfig) -> String {
     let include_method = config.include_method_in_names.unwrap_or(true);
 

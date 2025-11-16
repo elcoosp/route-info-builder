@@ -17,11 +17,14 @@ impl CodeGenerator for TypeScriptClientGenerator {
         let mut client_methods = Vec::new();
         let mut type_imports = HashSet::new();
 
-        // Generate imports
+        // Tanstack query imports
         imports.push(ts_string! {
             import { useQuery, useMutation, type UseQueryOptions, type UseMutationOptions } from "@tanstack/react-query";
         });
-
+        // Expected client imports
+        imports.push(ts_string! {
+            import { TOKEN_KEY } from "@/hooks/use-auth";
+        });
         // Collect all unique body types for import
         for route in routes {
             if let Some(body_type) = &route.handler_info.body_param {
@@ -34,6 +37,7 @@ impl CodeGenerator for TypeScriptClientGenerator {
 
         // Generate type imports
         for type_name in &type_imports {
+            // FIXME get path from config
             let import = format!("\"../../../bindings/{type_name}\"");
             imports.push(ts_string! {
                 import { type #type_name } from #import;
@@ -174,6 +178,11 @@ fn generate_ts_path_template(path: &str, _params: &[String]) -> String {
 
 fn generate_http_client() -> String {
     ts_string! {
+        export type ApiError = {
+            error: string;
+            description: string;
+        };
+
         // Base HTTP client with authentication support
         class ApiClient {
             private baseUrl: string = "";
@@ -206,7 +215,7 @@ fn generate_http_client() -> String {
                 });
 
                 if (!response.ok) {
-                    throw new Error("HTTP error! status: "+response.status);
+                    throw (await response.json() as ApiError);
                 }
 
                 // For 204 No Content responses, return null
@@ -263,12 +272,10 @@ fn generate_http_client() -> String {
         }
 
         // Create default instance
-        export const apiClient = new ApiClient();
-
-        // You can configure the client elsewhere in your app:
-        // apiClient = new ApiClient({
-        //   baseUrl: 'http://localhost:3000',
-        //   getToken: () => authCtx.getToken()
-        // });
+        export const apiClient = new ApiClient({
+          getToken: async () => {
+            return localStorage.getItem(TOKEN_KEY);
+          },
+        });
     }
 }

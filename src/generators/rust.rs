@@ -1,11 +1,11 @@
-use super::{CodeGenerator, ProcessedRoutes, RouteProcessor};
+use super::CodeGenerator;
 use crate::{
     RouteInfo,
     config::{Config, NamingConfig},
 };
 use proc_macro2::TokenStream;
 use quote::quote;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 pub struct RustLinksGenerator;
 
@@ -17,7 +17,6 @@ impl CodeGenerator for RustLinksGenerator {
         routes: &[RouteInfo],
         config: &Self::Config,
     ) -> Result<Self::Output, Box<dyn std::error::Error>> {
-        let processed = Self::process_routes(routes)?;
         let mut variants = Vec::new();
         let mut match_arms = Vec::new();
         let mut method_arms = Vec::new();
@@ -127,27 +126,6 @@ impl CodeGenerator for RustLinksGenerator {
         };
 
         Ok(generated.to_string())
-    }
-}
-
-impl RouteProcessor for RustLinksGenerator {
-    fn process_routes(routes: &[RouteInfo]) -> Result<ProcessedRoutes, Box<dyn std::error::Error>> {
-        let mut grouped_by_method = HashMap::new();
-        let mut unique_paths = HashSet::new();
-
-        for route in routes {
-            grouped_by_method
-                .entry(route.method.clone())
-                .or_insert_with(Vec::new)
-                .push(route.clone());
-            unique_paths.insert(route.path.clone());
-        }
-
-        Ok(ProcessedRoutes {
-            routes: routes.to_vec(),
-            grouped_by_method,
-            unique_paths,
-        })
     }
 }
 
