@@ -28,11 +28,17 @@ impl CodeGenerator for TypeScriptClientGenerator {
         // Collect all unique body types for import
         for route in routes {
             if let Some(body_type) = &route.handler_info.body_param {
-                type_imports.insert(body_type.clone());
+                // Check if it's a generic type like Array<T> - don't import built-in types
+                if !is_builtin_type(body_type) {
+                    type_imports.insert(body_type.clone());
+                }
             }
             if let Some(return_type) = &route.handler_info.return_type.found_type {
                 if route.handler_info.return_type.is_importable {
-                    type_imports.insert(return_type.clone());
+                    // Check if it's a generic type like Array<T> - don't import built-in types
+                    if !is_builtin_type(return_type) {
+                        type_imports.insert(return_type.clone());
+                    }
                 }
             }
         }
@@ -285,4 +291,14 @@ fn generate_http_client() -> String {
           },
         });
     }
+}
+
+/// Check if a type is a built-in TypeScript type that shouldn't be imported
+fn is_builtin_type(type_name: &str) -> bool {
+    type_name.starts_with("Array<")
+        || type_name == "string"
+        || type_name == "number"
+        || type_name == "boolean"
+        || type_name == "any"
+        || type_name == "void"
 }
