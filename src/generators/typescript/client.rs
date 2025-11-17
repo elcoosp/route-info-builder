@@ -37,9 +37,10 @@ impl CodeGenerator for TypeScriptClientGenerator {
 
             // Handle return types
             if let Some(return_type) = &route.handler_info.return_type.found_type
-                && route.handler_info.return_type.is_importable {
-                    extract_importable_types(return_type, &mut type_imports);
-                }
+                && route.handler_info.return_type.is_importable
+            {
+                extract_importable_types(return_type, &mut type_imports);
+            }
 
             // Handle error types
             for error_type in &route.handler_info.return_type.error_types {
@@ -50,22 +51,21 @@ impl CodeGenerator for TypeScriptClientGenerator {
         // Generate type imports
         for type_name in &type_imports {
             // FIXME get path from config
-            let import = format!("\"../../../bindings/{type_name}\"");
+            let import_path = format!("\"../../../bindings/{type_name}\"");
             imports.push(ts_string! {
-                import { type #type_name } from #import;
+                import { type #type_name } from #import_path;
             });
         }
 
         // Generate error type imports
         if !error_imports.is_empty() {
             let error_imports_vec: Vec<String> = error_imports.into_iter().collect();
-            let error_imports_str = error_imports_vec.join(", ");
-
-            // FIXME: Get path from config
-            let import_path = "\"../../../bindings\"";
-            imports.push(ts_string! {
-                import { #error_imports_str } from #import_path;
-            });
+            for type_name in error_imports_vec {
+                let import_path = format!("\"../../../bindings/{type_name}\"");
+                imports.push(ts_string! {
+                    import { type #type_name } from #import_path;
+                });
+            }
         }
 
         // Generate the base HTTP client with auth support
