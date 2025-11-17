@@ -7,6 +7,7 @@ pub struct ReturnTypeVisitor {
     pub found_type: Option<String>,
     pub is_importable: bool,
     pub error_types: Vec<String>,
+    pub error_variants: Vec<String>, // New: store full variant paths
 }
 
 impl ReturnTypeVisitor {
@@ -20,13 +21,14 @@ impl ReturnTypeVisitor {
             syn::Expr::Call(call_expr) => {
                 if let syn::Expr::Path(path_expr) = &*call_expr.func
                     && let Some(segment) = path_expr.path.segments.last()
-                        && segment.ident == "json" {
-                            // This is format::json call
-                            if let Some(first_arg) = call_expr.args.first() {
-                                self.visit_conversion_expr(first_arg);
-                                return; // Found our type, no need to continue
-                            }
-                        }
+                    && segment.ident == "json"
+                {
+                    // This is format::json call
+                    if let Some(first_arg) = call_expr.args.first() {
+                        self.visit_conversion_expr(first_arg);
+                        return; // Found our type, no need to continue
+                    }
+                }
 
                 // Also visit all arguments recursively
                 for arg in &call_expr.args {
@@ -90,10 +92,11 @@ impl ReturnTypeVisitor {
             syn::Expr::Call(call_expr) => {
                 if let syn::Expr::Path(path_expr) = &*call_expr.func
                     && let Some(segment) = path_expr.path.segments.last()
-                        && segment.ident == "Err"
-                            && let Some(error_arg) = call_expr.args.first() {
-                                self.extract_error_type(error_arg);
-                            }
+                    && segment.ident == "Err"
+                    && let Some(error_arg) = call_expr.args.first()
+                {
+                    self.extract_error_type(error_arg);
+                }
             }
             // Method calls like .into() on error types
             syn::Expr::MethodCall(method_call) => {
@@ -123,11 +126,15 @@ impl ReturnTypeVisitor {
             }
             // Struct-like error variants
             syn::Expr::Struct(struct_expr) => {
-                if let Some(segment) = struct_expr.path.segments.last() {
-                    let error_type = segment.ident.to_string();
-                    if !self.error_types.contains(&error_type) {
-                        self.error_types.push(error_type);
-                    }
+                let full_path = struct_expr
+                    .path
+                    .segments
+                    .iter()
+                    .map(|seg| seg.ident.to_string())
+                    .collect::<Vec<_>>()
+                    .join("::");
+                if !self.error_variants.contains(&full_path) {
+                    self.error_variants.push(full_path);
                 }
             }
             _ => {}
@@ -135,32 +142,34 @@ impl ReturnTypeVisitor {
     }
 
     fn extract_error_type_from_path(&mut self, path: &syn::Path) {
-        // Look for patterns like BadRequest::EmailAlreadyExists
-        if let Some(segment) = path.segments.last() {
-            let type_name = segment.ident.to_string();
+        let full_path = path
+            .segments
+            .iter()
+            .map(|seg| seg.ident.to_string())
+            .collect::<Vec<_>>()
+            .join("::");
 
-            // Check if this looks like an error type (you might want to customize this logic)
-            if type_name.ends_with("Error")
-                || type_name.contains("BadRequest")
-                || type_name.contains("NotFound")
-                || type_name.contains("Unauthorized")
-                || type_name.contains("Forbidden")
-                || type_name.contains("Conflict")
-            {
+        // Store the full variant path
+        if !self.error_variants.contains(&full_path) {
+            self.error_variants.push(full_path.clone());
+        }
+
+        // Also extract the main error type (parent for enum variants)
+        if path.segments.len() > 1 {
+            // This is an enum variant like BadRequest::EmailAlreadyExists
+            if let Some(parent_segment) = path.segments.iter().nth(path.segments.len() - 2) {
+                let parent_type = parent_segment.ident.to_string();
+                if !self.error_types.contains(&parent_type) {
+                    self.error_types.push(parent_type);
+                }
+            }
+        } else {
+            // This is a simple error type
+            if let Some(segment) = path.segments.last() {
+                let type_name = segment.ident.to_string();
                 if !self.error_types.contains(&type_name) {
                     self.error_types.push(type_name);
                 }
-            } else {
-                // For enum variants like BadRequest::EmailAlreadyExists
-                // The parent segment might be the actual error type
-                if path.segments.len() > 1
-                    && let Some(parent_segment) = path.segments.iter().nth(path.segments.len() - 2)
-                    {
-                        let parent_type = parent_segment.ident.to_string();
-                        if !self.error_types.contains(&parent_type) {
-                            self.error_types.push(parent_type);
-                        }
-                    }
             }
         }
     }
@@ -213,21 +222,22 @@ impl ReturnTypeVisitor {
         // Look for Vec::<T>::new pattern
         if path.segments.len() >= 2
             && let Some(vec_segment) = path.segments.first()
-                && vec_segment.ident == "Vec"
-                    && let syn::PathArguments::AngleBracketed(generics) = &vec_segment.arguments
-                        && let Some(syn::GenericArgument::Type(syn::Type::Path(type_path))) =
-                            generics.args.first()
-                            && let Some(inner_segment) = type_path.path.segments.last() {
-                                let inner_type = inner_segment.ident.to_string();
+            && vec_segment.ident == "Vec"
+            && let syn::PathArguments::AngleBracketed(generics) = &vec_segment.arguments
+            && let Some(syn::GenericArgument::Type(syn::Type::Path(type_path))) =
+                generics.args.first()
+            && let Some(inner_segment) = type_path.path.segments.last()
+        {
+            let inner_type = inner_segment.ident.to_string();
 
-                                // Check if the inner type is importable (not a built-in)
-                                if !ReturnTypeVisitor::is_builtin_type_rust(&inner_type) {
-                                    self.is_importable = true;
-                                }
+            // Check if the inner type is importable (not a built-in)
+            if !ReturnTypeVisitor::is_builtin_type_rust(&inner_type) {
+                self.is_importable = true;
+            }
 
-                                // Convert Vec<T> to Array<T>
-                                return Some(format!("Array<{}>", inner_type));
-                            }
+            // Convert Vec<T> to Array<T>
+            return Some(format!("Array<{}>", inner_type));
+        }
         None
     }
     fn is_builtin_type_rust(type_name: &str) -> bool {
@@ -300,35 +310,35 @@ pub fn extract_handler_info(
                 if let syn::FnArg::Typed(pat_type) = input {
                     // Check for body parameters (Json<T>, JsonValidate<T>, JsonValidateWithMessage<T>)
                     if let syn::Type::Path(type_path) = &*pat_type.ty
-                        && let Some(segment) = type_path.path.segments.last() {
-                            let type_ident = segment.ident.to_string();
+                        && let Some(segment) = type_path.path.segments.last()
+                    {
+                        let type_ident = segment.ident.to_string();
 
-                            // Handle Json<T>, JsonValidate<T>, and JsonValidateWithMessage<T>
-                            if matches!(
-                                type_ident.as_str(),
-                                "Json" | "JsonValidate" | "JsonValidateWithMessage"
-                            ) {
-                                // Extract the generic type parameter
-                                if let syn::PathArguments::AngleBracketed(generics) =
-                                    &segment.arguments
-                                    && let Some(syn::GenericArgument::Type(syn::Type::Path(
-                                        param_type,
-                                    ))) = generics.args.first()
-                                        && let Some(param_segment) = param_type.path.segments.last()
-                                        {
-                                            body_param = Some(param_segment.ident.to_string());
-                                        }
+                        // Handle Json<T>, JsonValidate<T>, and JsonValidateWithMessage<T>
+                        if matches!(
+                            type_ident.as_str(),
+                            "Json" | "JsonValidate" | "JsonValidateWithMessage"
+                        ) {
+                            // Extract the generic type parameter
+                            if let syn::PathArguments::AngleBracketed(generics) = &segment.arguments
+                                && let Some(syn::GenericArgument::Type(syn::Type::Path(param_type))) =
+                                    generics.args.first()
+                                && let Some(param_segment) = param_type.path.segments.last()
+                            {
+                                body_param = Some(param_segment.ident.to_string());
                             }
                         }
+                    }
 
                     // Check for authentication (auth: JWT)
                     if let Pat::Ident(pat_ident) = &*pat_type.pat
                         && pat_ident.ident == "auth"
-                            && let syn::Type::Path(type_path) = &*pat_type.ty
-                                && let Some(segment) = type_path.path.segments.last()
-                                    && segment.ident == "JWT" {
-                                        requires_auth = true;
-                                    }
+                        && let syn::Type::Path(type_path) = &*pat_type.ty
+                        && let Some(segment) = type_path.path.segments.last()
+                        && segment.ident == "JWT"
+                    {
+                        requires_auth = true;
+                    }
                 }
             }
 

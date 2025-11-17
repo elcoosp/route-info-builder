@@ -2,6 +2,8 @@ mod config;
 mod generators;
 mod parser;
 mod utils;
+use std::path::PathBuf;
+
 use crate::generators::CodeGenerator;
 pub use config::{Config, NamingConfig, TypeScriptConfig};
 pub use generators::{
@@ -20,18 +22,21 @@ pub fn generate_links(config: &Config) -> Result<String, Box<dyn std::error::Err
 
     // Generate TypeScript client if requested
     if config.typescript.generate_client.unwrap_or(false)
-        && let Some(ts_output) = &config.typescript.output_path {
-            let ts_client_code = TypeScriptClientGenerator::generate(&routes, &config.typescript)?;
-            let ts_hooks_code = TypeScriptHooksGenerator::generate(&routes, &config.typescript)?;
+        && let Some(ts_output) = &config.typescript.output_path
+    {
+        let ts_client_code = TypeScriptClientGenerator::generate(&routes, &config.typescript)?;
+        let ts_hooks_code = TypeScriptHooksGenerator::generate(&routes, &config.typescript)?;
 
-            // Combine client and hooks
-            let ts_code = format!("{}\n\n{}", ts_client_code, ts_hooks_code);
-            std::fs::write(ts_output, ts_code)?;
-            println!(
-                "cargo:warning=Generated TypeScript client at: {}",
-                ts_output.display()
-            );
-        }
+        // Combine client and hooks
+        let ts_client_code_path = PathBuf::from(ts_output).join("client.ts");
+        let ts_hooks_code_path = PathBuf::from(ts_output).join("api.ts");
+        std::fs::write(ts_client_code_path, ts_client_code)?;
+        std::fs::write(ts_hooks_code_path, ts_hooks_code)?;
+        println!(
+            "cargo:warning=Generated TypeScript client at: {}",
+            ts_output.display()
+        );
+    }
 
     Ok(rust_code)
 }

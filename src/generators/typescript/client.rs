@@ -1,5 +1,8 @@
-use super::super::CodeGenerator;
-use crate::{RouteInfo, config::TypeScriptConfig};
+use crate::{
+    RouteInfo,
+    config::TypeScriptConfig,
+    generators::{CodeGenerator, typescript::TypeImportManager},
+};
 use std::collections::HashSet;
 use ts_quote::ts_string;
 
@@ -15,58 +18,24 @@ impl CodeGenerator for TypeScriptClientGenerator {
     ) -> Result<Self::Output, Box<dyn std::error::Error>> {
         let mut imports = Vec::new();
         let mut client_methods = Vec::new();
-        let mut type_imports = HashSet::new();
-        let mut error_imports = HashSet::new();
+        let mut interfaces = Vec::new();
+
+        // Initialize type import manager and collect types
+        let mut type_manager = TypeImportManager::new();
+        type_manager.collect_from_routes(routes);
 
         // Tanstack query imports
         imports.push(ts_string! {
-            import { useQuery, useMutation, type UseQueryOptions, type UseMutationOptions } from "@tanstack/react-query";
-        });
+               import { useQuery, useMutation, type UseQueryOptions, type UseMutationOptions } from "@tanstack/react-query";
+           });
 
         // Expected client imports
         imports.push(ts_string! {
             import { TOKEN_KEY } from "@/hooks/use-auth";
         });
 
-        // Collect all unique body types, return types, and error types for import
-        for route in routes {
-            // Handle body types
-            if let Some(body_type) = &route.handler_info.body_param {
-                extract_importable_types(body_type, &mut type_imports);
-            }
-
-            // Handle return types
-            if let Some(return_type) = &route.handler_info.return_type.found_type
-                && route.handler_info.return_type.is_importable
-            {
-                extract_importable_types(return_type, &mut type_imports);
-            }
-
-            // Handle error types
-            for error_type in &route.handler_info.return_type.error_types {
-                error_imports.insert(error_type.clone());
-            }
-        }
-
-        // Generate type imports
-        for type_name in &type_imports {
-            // FIXME get path from config
-            let import_path = format!("\"../../../bindings/{type_name}\"");
-            imports.push(ts_string! {
-                import { type #type_name } from #import_path;
-            });
-        }
-
-        // Generate error type imports
-        if !error_imports.is_empty() {
-            let error_imports_vec: Vec<String> = error_imports.into_iter().collect();
-            for type_name in error_imports_vec {
-                let import_path = format!("\"../../../bindings/{type_name}\"");
-                imports.push(ts_string! {
-                    import { type #type_name } from #import_path;
-                });
-            }
-        }
+        // Add type imports from the shared manager
+        imports.extend(type_manager.generate_imports());
 
         // Generate the base HTTP client with auth support
         let http_client = generate_http_client();
@@ -74,18 +43,23 @@ impl CodeGenerator for TypeScriptClientGenerator {
         for route in routes {
             let method_name = crate::utils::case::convert_to_case(&route.name, "camel");
             let params = crate::utils::path::extract_parameters_from_path(&route.path);
-
+            if !params.is_empty() {
+                let interface = generate_ts_interface(&method_name, &params);
+                interfaces.push(interface);
+            }
             // Generate client method
             let client_method = generate_client_method(route, &method_name, &params);
             client_methods.push(client_method);
         }
 
         let imports_str = imports.join("\n");
+        let interfaces_str = interfaces.join("\n");
         let client_methods_str = client_methods.join("\n");
 
         // Combine all parts
         let ts_code = ts_string! {
             #imports_str
+            #interfaces_str
 
             // HTTP client with auth support
             #http_client
@@ -220,10 +194,37 @@ fn generate_ts_path_template(path: &str, _params: &[String]) -> String {
 
 fn generate_http_client() -> String {
     ts_string! {
-        export type ApiError = {
+        // Base error type that comes from the server
+        export type RawApiError = {
             error: string;
             description: string;
         };
+
+        // Parsed error type with structured details
+        export type ApiError<TDetails = unknown> = RawApiError & {
+            details: TDetails;
+        };
+
+        // Common error details structure for Bad Request errors
+        export type BadRequestErrorDetails = {
+            code: string;
+            message: string;
+        };
+
+        // Type guard to check if error is a Bad Request with structured details
+        export function isBadRequestError(error: unknown): error is ApiError<BadRequestErrorDetails> {
+            return (
+                typeof error === "object" &&
+                error !== null &&
+                "error" in error &&
+                (error as RawApiError).error === "Bad Request" &&
+                "details" in error &&
+                typeof (error as any).details === "object" &&
+                (error as any).details !== null &&
+                "code" in (error as any).details &&
+                "message" in (error as any).details
+            );
+        }
 
         // Base HTTP client with authentication support
         class ApiClient {
@@ -257,7 +258,11 @@ fn generate_http_client() -> String {
                 });
 
                 if (!response.ok) {
-                    throw (await response.json() as E);
+                    const rawError = await response.json() as RawApiError;
+
+                    // Transform the error to include parsed details
+                    const transformedError = this.transformError(rawError);
+                    throw transformedError;
                 }
 
                 // For 204 No Content responses, return null
@@ -266,6 +271,32 @@ fn generate_http_client() -> String {
                 }
 
                 return response.json() as Promise<T>;
+            }
+
+            private transformError(rawError: RawApiError): ApiError {
+                // For Bad Request errors, parse the description field
+                if (rawError.error === "Bad Request" && rawError.description) {
+                    try {
+                        const details = JSON.parse(rawError.description) as BadRequestErrorDetails;
+                        return {
+                            ...rawError,
+                            details,
+                        };
+                    } catch (e) {
+                        // If parsing fails, return the raw error with original description as details
+                        console.warn("Failed to parse error description:", e);
+                        return {
+                            ...rawError,
+                            details: rawError.description,
+                        };
+                    }
+                }
+
+                // For other error types, use the description as details
+                return {
+                    ...rawError,
+                    details: rawError.description,
+                };
             }
 
             async get<T, E = ApiError>(url: string, options: { requiresAuth?: boolean; signal?: AbortSignal } = {}): Promise<T> {
@@ -319,6 +350,26 @@ fn generate_http_client() -> String {
             return localStorage.getItem(TOKEN_KEY);
           },
         });
+    }
+}
+fn generate_ts_interface(method_name: &str, params: &[String]) -> String {
+    let interface_name = format!(
+        "{}Params",
+        crate::utils::case::convert_to_case(method_name, "pascal")
+    );
+    let mut fields = Vec::new();
+
+    for param in params {
+        let field_name = crate::utils::case::convert_to_case(param, "camel");
+        fields.push(ts_string! {
+            #field_name: string;
+        });
+    }
+    let fields_str = fields.join("\n");
+    ts_string! {
+        export interface #interface_name {
+            #fields_str
+        }
     }
 }
 

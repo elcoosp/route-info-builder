@@ -1,5 +1,8 @@
-use super::super::CodeGenerator;
-use crate::{RouteInfo, config::TypeScriptConfig};
+use crate::{
+    RouteInfo,
+    config::TypeScriptConfig,
+    generators::{CodeGenerator, typescript::TypeImportManager},
+};
 use ts_quote::ts_string;
 
 pub struct TypeScriptHooksGenerator;
@@ -12,8 +15,26 @@ impl CodeGenerator for TypeScriptHooksGenerator {
         routes: &[RouteInfo],
         _config: &Self::Config,
     ) -> Result<Self::Output, Box<dyn std::error::Error>> {
+        let mut imports = Vec::new();
         let mut hooks = Vec::new();
-        let mut interfaces = Vec::new();
+        let mut client_imports = Vec::new();
+
+        // Initialize type import manager and collect types
+        let mut type_manager = TypeImportManager::new();
+        type_manager.collect_from_routes(routes);
+
+        // Import necessary types from the client
+        imports.push(ts_string! {
+               import { type ApiError, type BadRequestErrorDetails, isBadRequestError, client } from "./client";
+           });
+
+        // Tanstack query imports
+        imports.push(ts_string! {
+               import { useQuery, useMutation, type UseQueryOptions, type UseMutationOptions } from "@tanstack/react-query";
+           });
+
+        // Add type imports from the shared manager
+        imports.extend(type_manager.generate_imports());
 
         for route in routes {
             let method_name = crate::utils::case::convert_to_case(&route.name, "camel");
@@ -22,24 +43,34 @@ impl CodeGenerator for TypeScriptHooksGenerator {
                 crate::utils::case::convert_to_case(&route.name, "pascal")
             );
             let params = crate::utils::path::extract_parameters_from_path(&route.path);
-
-            // Generate parameter interface if needed
             if !params.is_empty() {
-                let interface = generate_ts_interface(&method_name, &params);
-                interfaces.push(interface);
+                let interface_name = format!(
+                    "{}Params",
+                    crate::utils::case::convert_to_case(&method_name, "pascal")
+                );
+                client_imports.push(format!("type {interface_name}"));
             }
-
             // Generate hook with proper error union type
             let hook = generate_ts_hook(route, &method_name, &hook_name, &params);
             hooks.push(hook);
         }
 
-        let interfaces_str = interfaces.join("\n");
+        if !client_imports.is_empty() {
+            let client_imports_str = client_imports.join(", ");
+            imports.push(ts_string! {
+                import { #client_imports_str } from "./client";
+            });
+        }
+
+        let imports_str = imports.join("\n");
         let hooks_str = hooks.join("\n");
+
         // Combine all parts
         let ts_code = ts_string! {
-            // Interfaces
-            #interfaces_str
+            #imports_str
+
+            // Re-export error utilities for convenience
+            export { type ApiError, type BadRequestErrorDetails, isBadRequestError };
 
             // Hooks
             #hooks_str
@@ -48,27 +79,6 @@ impl CodeGenerator for TypeScriptHooksGenerator {
         // Format the TypeScript code
         let formatted = super::format_ts_code(&ts_code.to_string())?;
         Ok(formatted)
-    }
-}
-
-fn generate_ts_interface(method_name: &str, params: &[String]) -> String {
-    let interface_name = format!(
-        "{}Params",
-        crate::utils::case::convert_to_case(method_name, "pascal")
-    );
-    let mut fields = Vec::new();
-
-    for param in params {
-        let field_name = crate::utils::case::convert_to_case(param, "camel");
-        fields.push(ts_string! {
-            #field_name: string;
-        });
-    }
-    let fields_str = fields.join("\n");
-    ts_string! {
-        interface #interface_name {
-            #fields_str
-        }
     }
 }
 
@@ -88,13 +98,13 @@ fn generate_ts_hook(
         .unwrap_or("any");
     let _requires_auth = route.handler_info.requires_auth;
 
-    // Generate error union type for this specific hook
-    let error_union = generate_route_error_union(route);
+    // All hooks now use ApiError as the error type
+    let error_type = "ApiError";
 
     if route.method == "GET" {
         if params.is_empty() {
             ts_string! {
-                export function #hook_name(options?: Omit<UseQueryOptions<#return_type, #error_union>, "queryKey">) {
+                export function #hook_name(options?: Omit<UseQueryOptions<#return_type, #error_type>, "queryKey">) {
                     return useQuery({
                         queryKey: [#method_name_str],
                         queryFn: ({ signal }) => client.#method_name({ signal }),
@@ -108,7 +118,7 @@ fn generate_ts_hook(
                 crate::utils::case::convert_to_case(method_name, "pascal")
             );
             ts_string! {
-                export function #hook_name(params: #params_type, options?: Omit<UseQueryOptions<#return_type, #error_union>, "queryKey">) {
+                export function #hook_name(params: #params_type, options?: Omit<UseQueryOptions<#return_type, #error_type>, "queryKey">) {
                     return useQuery({
                         queryKey: [#method_name_str, params],
                         queryFn: ({ signal }) => client.#method_name(params, { signal }),
@@ -121,7 +131,7 @@ fn generate_ts_hook(
         // Mutation hook - use proper body and return types
         if params.is_empty() {
             ts_string! {
-                export function #hook_name(options?: UseMutationOptions<#return_type, #error_union, #body_type, unknown>) {
+                export function #hook_name(options?: UseMutationOptions<#return_type, #error_type, #body_type, unknown>) {
                     return useMutation({
                         mutationFn: (body: #body_type) => client.#method_name(body),
                         ...options,
@@ -134,7 +144,7 @@ fn generate_ts_hook(
                 crate::utils::case::convert_to_case(method_name, "pascal")
             );
             ts_string! {
-                export function #hook_name(options?: UseMutationOptions<#return_type, #error_union, { params: #params_type, body: #body_type }, unknown>) {
+                export function #hook_name(options?: UseMutationOptions<#return_type, #error_type, { params: #params_type, body: #body_type }, unknown>) {
                     return useMutation({
                         mutationFn: (input: { params: #params_type, body: #body_type }) =>
                             client.#method_name(input.params, input.body),
@@ -144,16 +154,4 @@ fn generate_ts_hook(
             }
         }
     }
-}
-
-/// Generate error union type for a specific route
-fn generate_route_error_union(route: &RouteInfo) -> String {
-    let mut error_types = vec!["ApiError".to_string()]; // Always include ApiError
-
-    // Add custom error types from the handler
-    for error_type in &route.handler_info.return_type.error_types {
-        error_types.push(error_type.clone());
-    }
-
-    error_types.join(" | ")
 }
