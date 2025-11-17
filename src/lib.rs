@@ -19,8 +19,8 @@ pub fn generate_links(config: &Config) -> Result<String, Box<dyn std::error::Err
     let rust_code = RustLinksGenerator::generate(&routes, config)?;
 
     // Generate TypeScript client if requested
-    if config.typescript.generate_client.unwrap_or(false) {
-        if let Some(ts_output) = &config.typescript.output_path {
+    if config.typescript.generate_client.unwrap_or(false)
+        && let Some(ts_output) = &config.typescript.output_path {
             let ts_client_code = TypeScriptClientGenerator::generate(&routes, &config.typescript)?;
             let ts_hooks_code = TypeScriptHooksGenerator::generate(&routes, &config.typescript)?;
 
@@ -32,7 +32,6 @@ pub fn generate_links(config: &Config) -> Result<String, Box<dyn std::error::Err
                 ts_output.display()
             );
         }
-    }
 
     Ok(rust_code)
 }

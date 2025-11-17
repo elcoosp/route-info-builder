@@ -1,6 +1,5 @@
 use super::super::CodeGenerator;
 use crate::{RouteInfo, config::TypeScriptConfig};
-use std::collections::HashSet;
 use ts_quote::ts_string;
 
 pub struct TypeScriptHooksGenerator;
@@ -103,7 +102,6 @@ fn generate_ts_hook(
                     });
                 }
             }
-            .into()
         } else {
             let params_type = format!(
                 "{}Params",
@@ -130,7 +128,6 @@ fn generate_ts_hook(
                     });
                 }
             }
-            .into()
         } else {
             let params_type = format!(
                 "{}Params",
@@ -159,18 +156,4 @@ fn generate_route_error_union(route: &RouteInfo) -> String {
     }
 
     error_types.join(" | ")
-}
-
-/// Generate the base error union type definition
-fn generate_error_union_type() -> String {
-    ts_string! {
-        // Base API error type
-        export type ApiError = {
-            error: string;
-            description: string;
-        };
-
-        // Union of all possible error types across the API
-        export type AppError = ApiError; // This will be extended by imported error types
-    }
 }

@@ -36,11 +36,10 @@ impl CodeGenerator for TypeScriptClientGenerator {
             }
 
             // Handle return types
-            if let Some(return_type) = &route.handler_info.return_type.found_type {
-                if route.handler_info.return_type.is_importable {
+            if let Some(return_type) = &route.handler_info.return_type.found_type
+                && route.handler_info.return_type.is_importable {
                     extract_importable_types(return_type, &mut type_imports);
                 }
-            }
 
             // Handle error types
             for error_type in &route.handler_info.return_type.error_types {

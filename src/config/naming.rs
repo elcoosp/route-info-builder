@@ -44,7 +44,7 @@ fn clean_route_path_for_name(path: &str, config: &super::NamingConfig) -> String
     let mut result = path.trim_matches('/').replace("//", "/");
 
     // Replace parameter placeholders
-    result = result.replace('{', "").replace('}', "");
+    result = result.replace(['{', '}'], "");
 
     // Use custom word separators if specified
     if let Some(separators) = &config.word_separators {

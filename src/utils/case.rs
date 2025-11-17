@@ -18,11 +18,10 @@ pub fn sanitize_identifier(name: &str) -> String {
     let mut chars = name.chars().peekable();
 
     // Ensure the identifier starts with a letter or underscore
-    if let Some(&first) = chars.peek() {
-        if !first.is_alphabetic() && first != '_' {
+    if let Some(&first) = chars.peek()
+        && !first.is_alphabetic() && first != '_' {
             result.push('_');
         }
-    }
 
     for c in chars {
         if c.is_alphanumeric() || c == '_' {
