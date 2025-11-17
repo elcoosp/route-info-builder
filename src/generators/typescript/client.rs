@@ -16,16 +16,19 @@ impl CodeGenerator for TypeScriptClientGenerator {
         let mut imports = Vec::new();
         let mut client_methods = Vec::new();
         let mut type_imports = HashSet::new();
+        let mut error_imports = HashSet::new();
 
         // Tanstack query imports
         imports.push(ts_string! {
             import { useQuery, useMutation, type UseQueryOptions, type UseMutationOptions } from "@tanstack/react-query";
         });
+
         // Expected client imports
         imports.push(ts_string! {
             import { TOKEN_KEY } from "@/hooks/use-auth";
         });
-        // Collect all unique body types and return types for import
+
+        // Collect all unique body types, return types, and error types for import
         for route in routes {
             // Handle body types
             if let Some(body_type) = &route.handler_info.body_param {
@@ -38,6 +41,11 @@ impl CodeGenerator for TypeScriptClientGenerator {
                     extract_importable_types(return_type, &mut type_imports);
                 }
             }
+
+            // Handle error types
+            for error_type in &route.handler_info.return_type.error_types {
+                error_imports.insert(error_type.clone());
+            }
         }
 
         // Generate type imports
@@ -46,6 +54,18 @@ impl CodeGenerator for TypeScriptClientGenerator {
             let import = format!("\"../../../bindings/{type_name}\"");
             imports.push(ts_string! {
                 import { type #type_name } from #import;
+            });
+        }
+
+        // Generate error type imports
+        if !error_imports.is_empty() {
+            let error_imports_vec: Vec<String> = error_imports.into_iter().collect();
+            let error_imports_str = error_imports_vec.join(", ");
+
+            // FIXME: Get path from config
+            let import_path = "\"../../../bindings\"";
+            imports.push(ts_string! {
+                import { #error_imports_str } from #import_path;
             });
         }
 
@@ -87,9 +107,7 @@ fn generate_client_method(route: &RouteInfo, method_name: &str, params: &[String
     let _method_upper = route.method.to_uppercase();
     let path_template = generate_ts_path_template(&route.path, params);
 
-    // Use the actual body type or void for no body
     let body_type = route.handler_info.body_param.as_deref().unwrap_or("void");
-    // Use the actual return type or any as fallback
     let return_type = route
         .handler_info
         .return_type
@@ -98,12 +116,15 @@ fn generate_client_method(route: &RouteInfo, method_name: &str, params: &[String
         .unwrap_or("any");
     let requires_auth = route.handler_info.requires_auth;
 
+    // Generate error union for this specific method
+    let error_union = generate_route_error_union(route);
+
     if params.is_empty() {
         if route.method == "GET" {
             ts_string! {
                 #method_name: async (config?: { signal?: AbortSignal }): Promise<#return_type> => {
                     const url = #path_template;
-                    return apiClient.get<#return_type>(url, { requiresAuth: #requires_auth, signal: config?.signal });
+                    return apiClient.get<#return_type, #error_union>(url, { requiresAuth: #requires_auth, signal: config?.signal });
                 },
             }
         } else {
@@ -118,7 +139,7 @@ fn generate_client_method(route: &RouteInfo, method_name: &str, params: &[String
             ts_string! {
                 #method_name: async (body: #body_type, config?: { signal?: AbortSignal }): Promise<#return_type> => {
                     const url = #path_template;
-                    return apiClient.#method_call<#return_type>(url, body, { requiresAuth: #requires_auth, signal: config?.signal });
+                    return apiClient.#method_call<#return_type, #error_union>(url, body, { requiresAuth: #requires_auth, signal: config?.signal });
                 },
             }
         }
@@ -132,7 +153,7 @@ fn generate_client_method(route: &RouteInfo, method_name: &str, params: &[String
             ts_string! {
                 #method_name: async (params: #params_type, config?: { signal?: AbortSignal }): Promise<#return_type> => {
                     const url = #path_template;
-                    return apiClient.get<#return_type>(url, { requiresAuth: #requires_auth, signal: config?.signal });
+                    return apiClient.get<#return_type, #error_union>(url, { requiresAuth: #requires_auth, signal: config?.signal });
                 },
             }
         } else {
@@ -147,11 +168,23 @@ fn generate_client_method(route: &RouteInfo, method_name: &str, params: &[String
             ts_string! {
                 #method_name: async (params: #params_type, body: #body_type, config?: { signal?: AbortSignal }): Promise<#return_type> => {
                     const url = #path_template;
-                    return apiClient.#method_call<#return_type>(url, body, { requiresAuth: #requires_auth, signal: config?.signal });
+                    return apiClient.#method_call<#return_type, #error_union>(url, body, { requiresAuth: #requires_auth, signal: config?.signal });
                 },
             }
         }
     }
+}
+
+/// Generate error union type for a specific route
+fn generate_route_error_union(route: &RouteInfo) -> String {
+    let mut error_types = vec!["ApiError".to_string()];
+
+    // Add custom error types from the handler
+    for error_type in &route.handler_info.return_type.error_types {
+        error_types.push(error_type.clone());
+    }
+
+    error_types.join(" | ")
 }
 
 fn generate_ts_path_template(path: &str, _params: &[String]) -> String {
@@ -203,7 +236,7 @@ fn generate_http_client() -> String {
                 this.getToken = config?.getToken;
             }
 
-            async request<T>(url: string, options: RequestInit & { requiresAuth?: boolean } = {}): Promise<T> {
+            async request<T, E = ApiError>(url: string, options: RequestInit & { requiresAuth?: boolean } = {}): Promise<T> {
                 const headers = new Headers(options.headers as Record<string, string>);
 
                 // Set Content-Type for requests with body
@@ -219,13 +252,13 @@ fn generate_http_client() -> String {
                     }
                 }
 
-                const response = await fetch(this.baseUrl+url, {
+                const response = await fetch(this.baseUrl + url, {
                     ...options,
                     headers,
                 });
 
                 if (!response.ok) {
-                    throw (await response.json() as ApiError);
+                    throw (await response.json() as E);
                 }
 
                 // For 204 No Content responses, return null
@@ -236,16 +269,16 @@ fn generate_http_client() -> String {
                 return response.json() as Promise<T>;
             }
 
-            async get<T>(url: string, options: { requiresAuth?: boolean; signal?: AbortSignal } = {}) {
-                return this.request<T>(url, {
+            async get<T, E = ApiError>(url: string, options: { requiresAuth?: boolean; signal?: AbortSignal } = {}): Promise<T> {
+                return this.request<T, E>(url, {
                     method: "GET",
                     requiresAuth: options.requiresAuth,
                     signal: options.signal,
                 });
             }
 
-            async post<T>(url: string, data?: any, options: { requiresAuth?: boolean; signal?: AbortSignal } = {}) {
-                return this.request<T>(url, {
+            async post<T, E = ApiError>(url: string, data?: any, options: { requiresAuth?: boolean; signal?: AbortSignal } = {}): Promise<T> {
+                return this.request<T, E>(url, {
                     method: "POST",
                     body: data ? JSON.stringify(data) : undefined,
                     requiresAuth: options.requiresAuth,
@@ -253,8 +286,8 @@ fn generate_http_client() -> String {
                 });
             }
 
-            async put<T>(url: string, data?: any, options: { requiresAuth?: boolean; signal?: AbortSignal } = {}) {
-                return this.request<T>(url, {
+            async put<T, E = ApiError>(url: string, data?: any, options: { requiresAuth?: boolean; signal?: AbortSignal } = {}): Promise<T> {
+                return this.request<T, E>(url, {
                     method: "PUT",
                     body: data ? JSON.stringify(data) : undefined,
                     requiresAuth: options.requiresAuth,
@@ -262,8 +295,8 @@ fn generate_http_client() -> String {
                 });
             }
 
-            async patch<T>(url: string, data?: any, options: { requiresAuth?: boolean; signal?: AbortSignal } = {}) {
-                return this.request<T>(url, {
+            async patch<T, E = ApiError>(url: string, data?: any, options: { requiresAuth?: boolean; signal?: AbortSignal } = {}): Promise<T> {
+                return this.request<T, E>(url, {
                     method: "PATCH",
                     body: data ? JSON.stringify(data) : undefined,
                     requiresAuth: options.requiresAuth,
@@ -271,8 +304,8 @@ fn generate_http_client() -> String {
                 });
             }
 
-            async delete<T>(url: string, data?: any,options: { requiresAuth?: boolean; signal?: AbortSignal } = {}) {
-                return this.request<T>(url, {
+            async delete<T, E = ApiError>(url: string, data?: any, options: { requiresAuth?: boolean; signal?: AbortSignal } = {}): Promise<T> {
+                return this.request<T, E>(url, {
                     method: "DELETE",
                     body: data ? JSON.stringify(data) : undefined,
                     requiresAuth: options.requiresAuth,

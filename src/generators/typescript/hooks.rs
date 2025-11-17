@@ -1,5 +1,6 @@
 use super::super::CodeGenerator;
 use crate::{RouteInfo, config::TypeScriptConfig};
+use std::collections::HashSet;
 use ts_quote::ts_string;
 
 pub struct TypeScriptHooksGenerator;
@@ -29,14 +30,13 @@ impl CodeGenerator for TypeScriptHooksGenerator {
                 interfaces.push(interface);
             }
 
-            // Generate hook
+            // Generate hook with proper error union type
             let hook = generate_ts_hook(route, &method_name, &hook_name, &params);
             hooks.push(hook);
         }
 
         let interfaces_str = interfaces.join("\n");
         let hooks_str = hooks.join("\n");
-
         // Combine all parts
         let ts_code = ts_string! {
             // Interfaces
@@ -89,10 +89,13 @@ fn generate_ts_hook(
         .unwrap_or("any");
     let _requires_auth = route.handler_info.requires_auth;
 
+    // Generate error union type for this specific hook
+    let error_union = generate_route_error_union(route);
+
     if route.method == "GET" {
         if params.is_empty() {
             ts_string! {
-                export function #hook_name(options?: Omit<UseQueryOptions<#return_type, ApiError>, "queryKey">) {
+                export function #hook_name(options?: Omit<UseQueryOptions<#return_type, #error_union>, "queryKey">) {
                     return useQuery({
                         queryKey: [#method_name_str],
                         queryFn: ({ signal }) => client.#method_name({ signal }),
@@ -107,7 +110,7 @@ fn generate_ts_hook(
                 crate::utils::case::convert_to_case(method_name, "pascal")
             );
             ts_string! {
-                export function #hook_name(params: #params_type, options?: Omit<UseQueryOptions<#return_type, ApiError>, "queryKey">) {
+                export function #hook_name(params: #params_type, options?: Omit<UseQueryOptions<#return_type, #error_union>, "queryKey">) {
                     return useQuery({
                         queryKey: [#method_name_str, params],
                         queryFn: ({ signal }) => client.#method_name(params, { signal }),
@@ -120,7 +123,7 @@ fn generate_ts_hook(
         // Mutation hook - use proper body and return types
         if params.is_empty() {
             ts_string! {
-                export function #hook_name(options?: UseMutationOptions<#return_type, ApiError, #body_type, unknown>) {
+                export function #hook_name(options?: UseMutationOptions<#return_type, #error_union, #body_type, unknown>) {
                     return useMutation({
                         mutationFn: (body: #body_type) => client.#method_name(body),
                         ...options,
@@ -134,7 +137,7 @@ fn generate_ts_hook(
                 crate::utils::case::convert_to_case(method_name, "pascal")
             );
             ts_string! {
-                export function #hook_name(options?: UseMutationOptions<#return_type, ApiError, { params: #params_type, body: #body_type }, unknown>) {
+                export function #hook_name(options?: UseMutationOptions<#return_type, #error_union, { params: #params_type, body: #body_type }, unknown>) {
                     return useMutation({
                         mutationFn: (input: { params: #params_type, body: #body_type }) =>
                             client.#method_name(input.params, input.body),
@@ -143,5 +146,31 @@ fn generate_ts_hook(
                 }
             }
         }
+    }
+}
+
+/// Generate error union type for a specific route
+fn generate_route_error_union(route: &RouteInfo) -> String {
+    let mut error_types = vec!["ApiError".to_string()]; // Always include ApiError
+
+    // Add custom error types from the handler
+    for error_type in &route.handler_info.return_type.error_types {
+        error_types.push(error_type.clone());
+    }
+
+    error_types.join(" | ")
+}
+
+/// Generate the base error union type definition
+fn generate_error_union_type() -> String {
+    ts_string! {
+        // Base API error type
+        export type ApiError = {
+            error: string;
+            description: string;
+        };
+
+        // Union of all possible error types across the API
+        export type AppError = ApiError; // This will be extended by imported error types
     }
 }

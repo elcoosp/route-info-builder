@@ -6,6 +6,7 @@ use syn::Pat;
 pub struct ReturnTypeVisitor {
     pub found_type: Option<String>,
     pub is_importable: bool,
+    pub error_types: Vec<String>,
 }
 
 impl ReturnTypeVisitor {
@@ -34,9 +35,10 @@ impl ReturnTypeVisitor {
                     self.visit_expr(arg);
                 }
             }
-            // Return statements
+            // Return statements - especially error returns
             syn::Expr::Return(return_expr) => {
                 if let Some(expr) = &return_expr.expr {
+                    self.visit_error_expr(expr); // Special handling for error returns
                     self.visit_expr(expr);
                 }
             }
@@ -80,6 +82,92 @@ impl ReturnTypeVisitor {
                 }
             }
             _ => {}
+        }
+    }
+
+    // New method specifically for detecting error expressions
+    fn visit_error_expr(&mut self, expr: &syn::Expr) {
+        match expr {
+            // Err(BadRequest::EmailAlreadyExists.into())
+            syn::Expr::Call(call_expr) => {
+                if let syn::Expr::Path(path_expr) = &*call_expr.func {
+                    if let Some(segment) = path_expr.path.segments.last() {
+                        if segment.ident == "Err" {
+                            if let Some(error_arg) = call_expr.args.first() {
+                                self.extract_error_type(error_arg);
+                            }
+                        }
+                    }
+                }
+            }
+            // Method calls like .into() on error types
+            syn::Expr::MethodCall(method_call) => {
+                if method_call.method == "into" {
+                    self.visit_error_expr(&method_call.receiver);
+                }
+            }
+            // Path expressions like BadRequest::EmailAlreadyExists
+            syn::Expr::Path(path_expr) => {
+                self.extract_error_type_from_path(&path_expr.path);
+            }
+            _ => {}
+        }
+    }
+
+    fn extract_error_type(&mut self, expr: &syn::Expr) {
+        match expr {
+            // BadRequest::EmailAlreadyExists.into()
+            syn::Expr::MethodCall(method_call) => {
+                if method_call.method == "into" {
+                    self.visit_error_expr(&method_call.receiver);
+                }
+            }
+            // BadRequest::EmailAlreadyExists
+            syn::Expr::Path(path_expr) => {
+                self.extract_error_type_from_path(&path_expr.path);
+            }
+            // Struct-like error variants
+            syn::Expr::Struct(struct_expr) => {
+                if let Some(segment) = struct_expr.path.segments.last() {
+                    let error_type = segment.ident.to_string();
+                    if !self.error_types.contains(&error_type) {
+                        self.error_types.push(error_type);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn extract_error_type_from_path(&mut self, path: &syn::Path) {
+        // Look for patterns like BadRequest::EmailAlreadyExists
+        if let Some(segment) = path.segments.last() {
+            let type_name = segment.ident.to_string();
+
+            // Check if this looks like an error type (you might want to customize this logic)
+            if type_name.ends_with("Error")
+                || type_name.contains("BadRequest")
+                || type_name.contains("NotFound")
+                || type_name.contains("Unauthorized")
+                || type_name.contains("Forbidden")
+                || type_name.contains("Conflict")
+            {
+                if !self.error_types.contains(&type_name) {
+                    self.error_types.push(type_name);
+                }
+            } else {
+                // For enum variants like BadRequest::EmailAlreadyExists
+                // The parent segment might be the actual error type
+                if path.segments.len() > 1 {
+                    if let Some(parent_segment) = path.segments.iter().nth(path.segments.len() - 2)
+                    {
+                        let parent_type = parent_segment.ident.to_string();
+                        if !self.error_types.contains(&parent_type) {
+                            self.error_types.push(parent_type);
+                        }
+                    }
+                }
+            }
         }
     }
 
