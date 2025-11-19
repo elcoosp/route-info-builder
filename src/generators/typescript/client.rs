@@ -267,7 +267,7 @@ fn generate_http_client() -> String {
 
                 // For 204 No Content responses, return null
                 if (response.status === 204) {
-                    return null as T;
+                    return null;
                 }
 
                 return response.json() as Promise<T>;
