@@ -224,7 +224,7 @@ export const client = {
 };
 
 // Hooks for React components
-export function useGetUsers(options?: UseQueryOptions<any, Error>) {
+export function useGetUsers(options?: Omit<UseQueryOptions<any, Error>, "queryKey">) {
   return useQuery({
     queryKey: ["getUsers"],
     queryFn: () => {
