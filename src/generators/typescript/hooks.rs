@@ -42,16 +42,24 @@ impl CodeGenerator for TypeScriptHooksGenerator {
                 "use{}",
                 crate::utils::case::convert_to_case(&route.name, "pascal")
             );
-            let params = crate::utils::path::extract_parameters_from_path(&route.path);
-            if !params.is_empty() {
+            let path_params = crate::utils::path::extract_parameters_from_path(&route.path);
+
+            // Add imports for path parameters if needed
+            if !path_params.is_empty() {
                 let interface_name = format!(
                     "{}Params",
                     crate::utils::case::convert_to_case(&method_name, "pascal")
                 );
                 client_imports.push(format!("type {interface_name}"));
             }
+
+            // Add imports for query parameters if needed
+            if let Some(query_type) = &route.handler_info.query_params {
+                client_imports.push(format!("type {query_type}"));
+            }
+
             // Generate hook with proper error union type
-            let hook = generate_ts_hook(route, &method_name, &hook_name, &params);
+            let hook = generate_ts_hook(route, &method_name, &hook_name, &path_params);
             hooks.push(hook);
         }
 
@@ -86,10 +94,11 @@ fn generate_ts_hook(
     route: &RouteInfo,
     method_name: &str,
     hook_name: &str,
-    params: &[String],
+    path_params: &[String],
 ) -> String {
     let method_name_str = format!("\"{method_name}\"");
     let body_type = route.handler_info.body_param.as_deref().unwrap_or("void");
+    let query_type = route.handler_info.query_params.as_deref().unwrap_or("void");
     let return_type = route
         .handler_info
         .return_type
@@ -101,8 +110,14 @@ fn generate_ts_hook(
     // All hooks now use ApiError as the error type
     let error_type = "ApiError";
 
+    let has_path_params = !path_params.is_empty();
+    let has_query_params = route.handler_info.query_params.is_some();
+    let has_body = route.method != "GET" && body_type != "void";
+
     if route.method == "GET" {
-        if params.is_empty() {
+        // GET hooks (useQuery)
+        if !has_path_params && !has_query_params {
+            // No parameters
             ts_string! {
                 export function #hook_name(options?: Omit<UseQueryOptions<#return_type, #error_type>, "queryKey">) {
                     return useQuery({
@@ -112,7 +127,8 @@ fn generate_ts_hook(
                     });
                 }
             }
-        } else {
+        } else if has_path_params && !has_query_params {
+            // Only path parameters
             let params_type = format!(
                 "{}Params",
                 crate::utils::case::convert_to_case(method_name, "pascal")
@@ -126,10 +142,86 @@ fn generate_ts_hook(
                     });
                 }
             }
+        } else if !has_path_params && has_query_params {
+            // Only query parameters
+            ts_string! {
+                export function #hook_name(query: #query_type, options?: Omit<UseQueryOptions<#return_type, #error_type>, "queryKey">) {
+                    return useQuery({
+                        queryKey: [#method_name_str, query],
+                        queryFn: ({ signal }) => client.#method_name(query, { signal }),
+                        ...options,
+                    });
+                }
+            }
+        } else {
+            // Both path and query parameters
+            let params_type = format!(
+                "{}Params",
+                crate::utils::case::convert_to_case(method_name, "pascal")
+            );
+            ts_string! {
+                export function #hook_name(params: #params_type, query: #query_type, options?: Omit<UseQueryOptions<#return_type, #error_type>, "queryKey">) {
+                    return useQuery({
+                        queryKey: [#method_name_str, params, query],
+                        queryFn: ({ signal }) => client.#method_name(params, query, { signal }),
+                        ...options,
+                    });
+                }
+            }
         }
     } else {
-        // Mutation hook - use proper body and return types
-        if params.is_empty() {
+        // Mutation hooks (useMutation) - use proper body and return types
+        if !has_path_params && !has_query_params && !has_body {
+            // No parameters at all
+            ts_string! {
+                export function #hook_name(options?: UseMutationOptions<#return_type, #error_type, void, unknown>) {
+                    return useMutation({
+                        mutationFn: () => client.#method_name(),
+                        ...options,
+                    });
+                }
+            }
+        } else if has_path_params && !has_query_params && !has_body {
+            // Only path parameters
+            let params_type = format!(
+                "{}Params",
+                crate::utils::case::convert_to_case(method_name, "pascal")
+            );
+            ts_string! {
+                export function #hook_name(options?: UseMutationOptions<#return_type, #error_type, #params_type, unknown>) {
+                    return useMutation({
+                        mutationFn: (params: #params_type) => client.#method_name(params),
+                        ...options,
+                    });
+                }
+            }
+        } else if !has_path_params && has_query_params && !has_body {
+            // Only query parameters
+            ts_string! {
+                export function #hook_name(options?: UseMutationOptions<#return_type, #error_type, #query_type, unknown>) {
+                    return useMutation({
+                        mutationFn: (query: #query_type) => client.#method_name(query),
+                        ...options,
+                    });
+                }
+            }
+        } else if has_path_params && has_query_params && !has_body {
+            // Path and query parameters, no body
+            let params_type = format!(
+                "{}Params",
+                crate::utils::case::convert_to_case(method_name, "pascal")
+            );
+            ts_string! {
+                export function #hook_name(options?: UseMutationOptions<#return_type, #error_type, { params: #params_type, query: #query_type }, unknown>) {
+                    return useMutation({
+                        mutationFn: (input: { params: #params_type, query: #query_type }) =>
+                            client.#method_name(input.params, input.query),
+                        ...options,
+                    });
+                }
+            }
+        } else if !has_path_params && !has_query_params && has_body {
+            // Only body
             ts_string! {
                 export function #hook_name(options?: UseMutationOptions<#return_type, #error_type, #body_type, unknown>) {
                     return useMutation({
@@ -138,7 +230,8 @@ fn generate_ts_hook(
                     });
                 }
             }
-        } else {
+        } else if has_path_params && !has_query_params && has_body {
+            // Path parameters and body
             let params_type = format!(
                 "{}Params",
                 crate::utils::case::convert_to_case(method_name, "pascal")
@@ -152,6 +245,32 @@ fn generate_ts_hook(
                     });
                 }
             }
+        } else if !has_path_params && has_query_params && has_body {
+            // Query parameters and body
+            ts_string! {
+                export function #hook_name(options?: UseMutationOptions<#return_type, #error_type, { query: #query_type, body: #body_type }, unknown>) {
+                    return useMutation({
+                        mutationFn: (input: { query: #query_type, body: #body_type }) =>
+                            client.#method_name(input.query, input.body),
+                        ...options,
+                    });
+                }
+            }
+        } else {
+            // All three: path parameters, query parameters, and body
+            let params_type = format!(
+                "{}Params",
+                crate::utils::case::convert_to_case(method_name, "pascal")
+            );
+            ts_string! {
+                export function #hook_name(options?: UseMutationOptions<#return_type, #error_type, { params: #params_type, query: #query_type, body: #body_type }, unknown>) {
+                    return useMutation({
+                        mutationFn: (input: { params: #params_type, query: #query_type, body: #body_type }) =>
+                            client.#method_name(input.params, input.query, input.body),
+                        ...options,
+                    });
+                }
+            }
         }
-    }
+    }.to_string()
 }

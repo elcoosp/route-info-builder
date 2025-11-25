@@ -292,7 +292,7 @@ impl ReturnTypeVisitor {
     }
 }
 
-/// Extract body parameter types and auth requirements from handler functions
+/// Extract body parameter types, query parameters and auth requirements from handler functions
 pub fn extract_handler_info(
     syntax: &syn::File,
 ) -> Result<HashMap<String, HandlerInfo>, Box<dyn std::error::Error>> {
@@ -302,10 +302,11 @@ pub fn extract_handler_info(
         if let syn::Item::Fn(func) = item {
             let handler_name = func.sig.ident.to_string();
             let mut body_param = None;
+            let mut query_params = None;
             let mut requires_auth = false;
             let mut return_type = ReturnTypeVisitor::default();
 
-            // Look for Json, JsonValidate, and JsonValidateWithMessage parameters
+            // Look for Json, JsonValidate, Query, and auth parameters
             for input in &func.sig.inputs {
                 if let syn::FnArg::Typed(pat_type) = input {
                     // Check for body parameters (Json<T>, JsonValidate<T>, JsonValidateWithMessage<T>)
@@ -326,6 +327,17 @@ pub fn extract_handler_info(
                                 && let Some(param_segment) = param_type.path.segments.last()
                             {
                                 body_param = Some(param_segment.ident.to_string());
+                            }
+                        }
+                        // Handle Query parameters
+                        else if type_ident == "Query" {
+                            // Extract the generic type parameter for Query<T>
+                            if let syn::PathArguments::AngleBracketed(generics) = &segment.arguments
+                                && let Some(syn::GenericArgument::Type(syn::Type::Path(param_type))) =
+                                    generics.args.first()
+                                && let Some(param_segment) = param_type.path.segments.last()
+                            {
+                                query_params = Some(param_segment.ident.to_string());
                             }
                         }
                     }
@@ -349,6 +361,7 @@ pub fn extract_handler_info(
                 handler_name,
                 HandlerInfo {
                     body_param,
+                    query_params,
                     requires_auth,
                     return_type,
                 },

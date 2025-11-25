@@ -18,6 +18,7 @@ pub struct RouteInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct HandlerInfo {
     pub body_param: Option<String>,
+    pub query_params: Option<String>, // NEW: Query parameter type
     pub requires_auth: bool,
     pub return_type: handlers::ReturnTypeVisitor,
 }
@@ -42,10 +43,12 @@ pub fn scan_controllers_folder(
 
         if path.is_file()
             && let Some(filename) = path.file_name().and_then(|s| s.to_str())
-                && filename != "mod.rs" && filename.ends_with(".rs")
-                    && let Some(file_routes) = parse_routes_from_file(&path, config)? {
-                        routes.extend(file_routes);
-                    }
+            && filename != "mod.rs"
+            && filename.ends_with(".rs")
+            && let Some(file_routes) = parse_routes_from_file(&path, config)?
+        {
+            routes.extend(file_routes);
+        }
     }
 
     // Deduplicate routes by (method, path) combination
@@ -80,10 +83,11 @@ fn parse_routes_from_file(
     for item in &syntax.items {
         if let syn::Item::Fn(func) = item
             && func.sig.ident == "routes"
-                && let Some(routes_vec) = extract_routes_from_axum_function(func, config)? {
-                    routes = routes_vec;
-                    break;
-                }
+            && let Some(routes_vec) = extract_routes_from_axum_function(func, config)?
+        {
+            routes = routes_vec;
+            break;
+        }
     }
 
     // Now extract body parameters and auth requirements from handler functions
@@ -145,13 +149,14 @@ fn extract_routes_from_expr(
                 "prefix" => {
                     if let Some(first_arg) = method_call.args.first()
                         && let syn::Expr::Lit(expr_lit) = first_arg
-                            && let syn::Lit::Str(lit_str) = &expr_lit.lit {
-                                *prefix = lit_str.value();
-                                // Ensure prefix starts with slash
-                                if !prefix.starts_with('/') {
-                                    *prefix = format!("/{}", prefix);
-                                }
-                            }
+                        && let syn::Lit::Str(lit_str) = &expr_lit.lit
+                    {
+                        *prefix = lit_str.value();
+                        // Ensure prefix starts with slash
+                        if !prefix.starts_with('/') {
+                            *prefix = format!("/{}", prefix);
+                        }
+                    }
                 }
                 "add" => {
                     if let (Some(path_expr), Some(method_expr)) =
@@ -178,6 +183,7 @@ fn extract_routes_from_expr(
                             handler,
                             handler_info: HandlerInfo {
                                 body_param: None,
+                                query_params: None,
                                 requires_auth: false,
                                 return_type: ReturnTypeVisitor::default(),
                             },
@@ -191,9 +197,10 @@ fn extract_routes_from_expr(
             // Handle Routes::new() call - reset prefix
             if let syn::Expr::Path(func_path) = &*call_expr.func
                 && let Some(segment) = func_path.path.segments.last()
-                    && segment.ident == "new" {
-                        *prefix = String::new(); // Reset prefix for new chain
-                    }
+                && segment.ident == "new"
+            {
+                *prefix = String::new(); // Reset prefix for new chain
+            }
         }
         _ => {}
     }
@@ -203,9 +210,10 @@ fn extract_routes_from_expr(
 
 fn extract_string_literal(expr: &syn::Expr) -> Option<String> {
     if let syn::Expr::Lit(expr_lit) = expr
-        && let syn::Lit::Str(lit_str) = &expr_lit.lit {
-            return Some(lit_str.value());
-        }
+        && let syn::Lit::Str(lit_str) = &expr_lit.lit
+    {
+        return Some(lit_str.value());
+    }
     None
 }
 
@@ -213,16 +221,18 @@ fn extract_string_literal(expr: &syn::Expr) -> Option<String> {
 fn extract_http_method_and_handler(expr: &syn::Expr) -> Option<(String, String)> {
     if let syn::Expr::Call(call_expr) = expr
         && let syn::Expr::Path(func_path) = &*call_expr.func
-            && let Some(segment) = func_path.path.segments.last() {
-                let method_name = segment.ident.to_string().to_uppercase();
+        && let Some(segment) = func_path.path.segments.last()
+    {
+        let method_name = segment.ident.to_string().to_uppercase();
 
-                // Extract handler function name from arguments
-                if let Some(handler_expr) = call_expr.args.first()
-                    && let syn::Expr::Path(handler_path) = handler_expr
-                        && let Some(handler_segment) = handler_path.path.segments.last() {
-                            let handler_name = handler_segment.ident.to_string();
-                            return Some((method_name, handler_name));
-                        }
-            }
+        // Extract handler function name from arguments
+        if let Some(handler_expr) = call_expr.args.first()
+            && let syn::Expr::Path(handler_path) = handler_expr
+            && let Some(handler_segment) = handler_path.path.segments.last()
+        {
+            let handler_name = handler_segment.ident.to_string();
+            return Some((method_name, handler_name));
+        }
+    }
     None
 }

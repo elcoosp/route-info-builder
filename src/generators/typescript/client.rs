@@ -42,13 +42,16 @@ impl CodeGenerator for TypeScriptClientGenerator {
 
         for route in routes {
             let method_name = crate::utils::case::convert_to_case(&route.name, "camel");
-            let params = crate::utils::path::extract_parameters_from_path(&route.path);
-            if !params.is_empty() {
-                let interface = generate_ts_interface(&method_name, &params);
+            let path_params = crate::utils::path::extract_parameters_from_path(&route.path);
+
+            // Generate interfaces for path parameters if needed
+            if !path_params.is_empty() {
+                let interface = generate_ts_interface(&method_name, "Params", &path_params);
                 interfaces.push(interface);
             }
+
             // Generate client method
-            let client_method = generate_client_method(route, &method_name, &params);
+            let client_method = generate_client_method(route, &method_name, &path_params);
             client_methods.push(client_method);
         }
 
@@ -76,11 +79,12 @@ impl CodeGenerator for TypeScriptClientGenerator {
     }
 }
 
-fn generate_client_method(route: &RouteInfo, method_name: &str, params: &[String]) -> String {
+fn generate_client_method(route: &RouteInfo, method_name: &str, path_params: &[String]) -> String {
     let _method_upper = route.method.to_uppercase();
-    let path_template = generate_ts_path_template(&route.path, params);
+    let path_template = generate_ts_path_template(&route.path, path_params);
 
     let body_type = route.handler_info.body_param.as_deref().unwrap_or("void");
+    let query_type = route.handler_info.query_params.as_deref().unwrap_or("void");
     let return_type = route
         .handler_info
         .return_type
@@ -92,60 +96,205 @@ fn generate_client_method(route: &RouteInfo, method_name: &str, params: &[String
     // Generate error union for this specific method
     let error_union = generate_route_error_union(route);
 
-    if params.is_empty() {
-        if route.method == "GET" {
+    let has_path_params = !path_params.is_empty();
+    let has_query_params = route.handler_info.query_params.is_some();
+    let has_body = route.method != "GET" && body_type != "void";
+
+    if route.method == "GET" {
+        // GET request with various parameter combinations
+        if !has_path_params && !has_query_params {
+            // No parameters
             ts_string! {
                 #method_name: async (config?: { signal?: AbortSignal }): Promise<#return_type> => {
                     const url = #path_template;
                     return apiClient.get<#return_type, #error_union>(url, { requiresAuth: #requires_auth, signal: config?.signal });
                 },
             }
-        } else {
-            let method_call = match route.method.as_str() {
-                "POST" => "post",
-                "PUT" => "put",
-                "PATCH" => "patch",
-                "DELETE" => "delete",
-                _ => "post",
-            };
-
-            ts_string! {
-                #method_name: async (body: #body_type, config?: { signal?: AbortSignal }): Promise<#return_type> => {
-                    const url = #path_template;
-                    return apiClient.#method_call<#return_type, #error_union>(url, body, { requiresAuth: #requires_auth, signal: config?.signal });
-                },
-            }
-        }
-    } else {
-        let params_type = format!(
-            "{}Params",
-            crate::utils::case::convert_to_case(method_name, "pascal")
-        );
-
-        if route.method == "GET" {
+        } else if has_path_params && !has_query_params {
+            // Only path parameters
+            let params_type = format!(
+                "{}Params",
+                crate::utils::case::convert_to_case(method_name, "pascal")
+            );
             ts_string! {
                 #method_name: async (params: #params_type, config?: { signal?: AbortSignal }): Promise<#return_type> => {
                     const url = #path_template;
                     return apiClient.get<#return_type, #error_union>(url, { requiresAuth: #requires_auth, signal: config?.signal });
                 },
             }
+        } else if !has_path_params && has_query_params {
+            // Only query parameters
+            ts_string! {
+                #method_name: async (query: #query_type, config?: { signal?: AbortSignal }): Promise<#return_type> => {
+                    let url = #path_template;
+                    const queryString = new URLSearchParams();
+                    Object.entries(query).forEach(([key, value]) => {
+                        if (value !== undefined && value !== null) {
+                            queryString.append(key, value.toString());
+                        }
+                    });
+                    const queryStr = queryString.toString();
+                    if (queryStr) {
+                        url += "?"+queryStr;
+                    }
+                    return apiClient.get<#return_type, #error_union>(url, { requiresAuth: #requires_auth, signal: config?.signal });
+                },
+            }
         } else {
-            let method_call = match route.method.as_str() {
-                "POST" => "post",
-                "PUT" => "put",
-                "PATCH" => "patch",
-                "DELETE" => "delete",
-                _ => "post",
-            };
+            // Both path and query parameters
+            let params_type = format!(
+                "{}Params",
+                crate::utils::case::convert_to_case(method_name, "pascal")
+            );
+            ts_string! {
+                #method_name: async (params: #params_type, query: #query_type, config?: { signal?: AbortSignal }): Promise<#return_type> => {
+                    let url = #path_template;
+                    const queryString = new URLSearchParams();
+                    Object.entries(query).forEach(([key, value]) => {
+                        if (value !== undefined && value !== null) {
+                            queryString.append(key, value.toString());
+                        }
+                    });
+                    const queryStr = queryString.toString();
+                    if (queryStr) {
+                        url += "?"+queryStr;
+                    }
+                    return apiClient.get<#return_type, #error_union>(url, { requiresAuth: #requires_auth, signal: config?.signal });
+                },
+            }
+        }
+    } else {
+        // Non-GET requests (POST, PUT, PATCH, DELETE)
+        let method_call = match route.method.as_str() {
+            "POST" => "post",
+            "PUT" => "put",
+            "PATCH" => "patch",
+            "DELETE" => "delete",
+            _ => "post",
+        };
 
+        if !has_path_params && !has_query_params && !has_body {
+            // No parameters at all
+            ts_string! {
+                #method_name: async (config?: { signal?: AbortSignal }): Promise<#return_type> => {
+                    const url = #path_template;
+                    return apiClient.#method_call<#return_type, #error_union>(url, undefined, { requiresAuth: #requires_auth, signal: config?.signal });
+                },
+            }
+        } else if has_path_params && !has_query_params && !has_body {
+            // Only path parameters, no body
+            let params_type = format!(
+                "{}Params",
+                crate::utils::case::convert_to_case(method_name, "pascal")
+            );
+            ts_string! {
+                #method_name: async (params: #params_type, config?: { signal?: AbortSignal }): Promise<#return_type> => {
+                    const url = #path_template;
+                    return apiClient.#method_call<#return_type, #error_union>(url, undefined, { requiresAuth: #requires_auth, signal: config?.signal });
+                },
+            }
+        } else if !has_path_params && has_query_params && !has_body {
+            // Only query parameters, no body
+            ts_string! {
+                #method_name: async (query: #query_type, config?: { signal?: AbortSignal }): Promise<#return_type> => {
+                    let url = #path_template;
+                    const queryString = new URLSearchParams();
+                    Object.entries(query).forEach(([key, value]) => {
+                        if (value !== undefined && value !== null) {
+                            queryString.append(key, value.toString());
+                        }
+                    });
+                    const queryStr = queryString.toString();
+                    if (queryStr) {
+                        url += "?"+queryStr;
+                    }
+                    return apiClient.#method_call<#return_type, #error_union>(url, undefined, { requiresAuth: #requires_auth, signal: config?.signal });
+                },
+            }
+        } else if has_path_params && has_query_params && !has_body {
+            // Path and query parameters, no body
+            let params_type = format!(
+                "{}Params",
+                crate::utils::case::convert_to_case(method_name, "pascal")
+            );
+            ts_string! {
+                #method_name: async (params: #params_type, query: #query_type, config?: { signal?: AbortSignal }): Promise<#return_type> => {
+                    let url = #path_template;
+                    const queryString = new URLSearchParams();
+                    Object.entries(query).forEach(([key, value]) => {
+                        if (value !== undefined && value !== null) {
+                            queryString.append(key, value.toString());
+                        }
+                    });
+                    const queryStr = queryString.toString();
+                    if (queryStr) {
+                        url += "?"+queryStr;
+                    }
+                    return apiClient.#method_call<#return_type, #error_union>(url, undefined, { requiresAuth: #requires_auth, signal: config?.signal });
+                },
+            }
+        } else if !has_path_params && !has_query_params && has_body {
+            // Only body
+            ts_string! {
+                #method_name: async (body: #body_type, config?: { signal?: AbortSignal }): Promise<#return_type> => {
+                    const url = #path_template;
+                    return apiClient.#method_call<#return_type, #error_union>(url, body, { requiresAuth: #requires_auth, signal: config?.signal });
+                },
+            }
+        } else if has_path_params && !has_query_params && has_body {
+            // Path parameters and body
+            let params_type = format!(
+                "{}Params",
+                crate::utils::case::convert_to_case(method_name, "pascal")
+            );
             ts_string! {
                 #method_name: async (params: #params_type, body: #body_type, config?: { signal?: AbortSignal }): Promise<#return_type> => {
                     const url = #path_template;
                     return apiClient.#method_call<#return_type, #error_union>(url, body, { requiresAuth: #requires_auth, signal: config?.signal });
                 },
             }
+        } else if !has_path_params && has_query_params && has_body {
+            // Query parameters and body
+            ts_string! {
+                #method_name: async (query: #query_type, body: #body_type, config?: { signal?: AbortSignal }): Promise<#return_type> => {
+                    let url = #path_template;
+                    const queryString = new URLSearchParams();
+                    Object.entries(query).forEach(([key, value]) => {
+                        if (value !== undefined && value !== null) {
+                            queryString.append(key, value.toString());
+                        }
+                    });
+                    const queryStr = queryString.toString();
+                    if (queryStr) {
+                        url += "?"+queryStr;
+                    }
+                    return apiClient.#method_call<#return_type, #error_union>(url, body, { requiresAuth: #requires_auth, signal: config?.signal });
+                },
+            }
+        } else {
+            // All three: path parameters, query parameters, and body
+            let params_type = format!(
+                "{}Params",
+                crate::utils::case::convert_to_case(method_name, "pascal")
+            );
+            ts_string! {
+                #method_name: async (params: #params_type, query: #query_type, body: #body_type, config?: { signal?: AbortSignal }): Promise<#return_type> => {
+                    let url = #path_template;
+                    const queryString = new URLSearchParams();
+                    Object.entries(query).forEach(([key, value]) => {
+                        if (value !== undefined && value !== null) {
+                            queryString.append(key, value.toString());
+                        }
+                    });
+                    const queryStr = queryString.toString();
+                    if (queryStr) {
+                        url += "?"+queryStr;
+                    }
+                    return apiClient.#method_call<#return_type, #error_union>(url, body, { requiresAuth: #requires_auth, signal: config?.signal });
+                },
+            }
         }
-    }
+    }.to_string()
 }
 
 /// Generate error union type for a specific route
@@ -193,6 +342,8 @@ fn generate_ts_path_template(path: &str, _params: &[String]) -> String {
 }
 
 fn generate_http_client() -> String {
+    // ... (keep the existing http client implementation unchanged)
+    // This function remains the same as in your original code
     ts_string! {
         // Base error type that comes from the server
         export type RawApiError = {
@@ -352,10 +503,12 @@ fn generate_http_client() -> String {
         });
     }
 }
-fn generate_ts_interface(method_name: &str, params: &[String]) -> String {
+
+fn generate_ts_interface(method_name: &str, suffix: &str, params: &[String]) -> String {
     let interface_name = format!(
-        "{}Params",
-        crate::utils::case::convert_to_case(method_name, "pascal")
+        "{}{}",
+        crate::utils::case::convert_to_case(method_name, "pascal"),
+        suffix
     );
     let mut fields = Vec::new();
 
@@ -371,45 +524,4 @@ fn generate_ts_interface(method_name: &str, params: &[String]) -> String {
             #fields_str
         }
     }
-}
-
-/// Extract importable types from type strings, handling generics like Array<T>
-fn extract_importable_types(type_str: &str, imports: &mut HashSet<String>) {
-    // Check if this is a generic type like Array<T>
-    if let Some(inner_type) = extract_generic_inner_type(type_str) {
-        // Recursively extract inner types (for nested generics)
-        extract_importable_types(&inner_type, imports);
-    } else if !is_builtin_type(type_str) {
-        // Only add non-builtin types
-        imports.insert(type_str.to_string());
-    }
-}
-
-/// Extract the inner type from generic types like Array<T>, Option<T>, etc.
-fn extract_generic_inner_type(type_str: &str) -> Option<String> {
-    if type_str.starts_with("Array<") && type_str.ends_with('>') {
-        Some(type_str[6..type_str.len() - 1].to_string())
-    } else if type_str.starts_with("Option<") && type_str.ends_with('>') {
-        Some(type_str[7..type_str.len() - 1].to_string())
-    } else if type_str.starts_with("Result<") && type_str.ends_with('>') {
-        // For Result<T, E>, we only care about the success type T
-        let inner = &type_str[7..type_str.len() - 1];
-        inner.split(',').next().map(|s| s.trim().to_string())
-    } else {
-        None
-    }
-}
-
-/// Check if a type is a built-in TypeScript type that shouldn't be imported
-fn is_builtin_type(type_name: &str) -> bool {
-    type_name == "string" ||
-    type_name == "number" ||
-    type_name == "boolean" ||
-    type_name == "any" ||
-    type_name == "void" ||
-    type_name == "unknown" ||
-    type_name == "null" ||
-    type_name == "undefined" ||
-    type_name == "Array" ||  // Array without generic is built-in
-    type_name == "Promise" // Promise is built-in
 }

@@ -1,8 +1,6 @@
-use ts_quote::ts_string;
-
-// [file name]: imports.rs
 use crate::RouteInfo;
 use std::collections::HashSet;
+use ts_quote::ts_string;
 
 /// Shared utilities for handling TypeScript type imports
 pub struct TypeImportManager {
@@ -24,6 +22,11 @@ impl TypeImportManager {
             // Handle body types
             if let Some(body_type) = &route.handler_info.body_param {
                 self.extract_importable_types(body_type);
+            }
+
+            // Handle query parameter types
+            if let Some(query_type) = &route.handler_info.query_params {
+                self.extract_importable_types(query_type);
             }
 
             // Handle return types
