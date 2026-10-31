@@ -1,19 +1,33 @@
-# Route Info Builder
+<div align="center">
+  <img src="docs/logo.png" alt="Route Info Builder Logo" width="300"/>
+  <p>
+    <strong>Route Info Builder</strong><br/>
+    A Rust procedural macro library for generating type-safe route information and TypeScript clients from Axum web framework routes.
+  </p>
+  <p>
+    <img src="https://img.shields.io/badge/Rust-1.94%20%7C%202024-000000?style=flat-square&logo=rust" alt="Rust"/>
+    <img src="https://img.shields.io/crates/v/route-info-builder?style=flat-square" alt="Crates.io"/>
+    <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License MIT"/>
+    <img src="https://img.shields.io/badge/Framework-Axum-000000?style=flat-square" alt="Axum"/>
+    <img src="https://img.shields.io/badge/Target-TypeScript%20%2B%20React%20Query-3178C6?style=flat-square" alt="TypeScript"/>
+  </p>
+</div>
 
-A Rust procedural macro library for generating type-safe route information and TypeScript clients from Axum web framework routes.
+---
+
+`route-info-builder` bridges the gap between your Rust backend and frontend by automatically scanning your Axum controllers and generating fully type-safe routing enums and API clients. Eliminate hardcoded URLs and manual client boilerplate.
 
 ## Features
 
-- 🔍 **Automatic Route Scanning** - Scans your Axum controller files to extract route information
-- 🦀 **Rust Enum Generation** - Generates type-safe Rust enums for all your application routes
-- 📘 **TypeScript Client** - Creates a fully-typed TypeScript client with React Query hooks
-- 🎯 **Type Safety** - Compile-time checked routes with parameters
-- ⚡ **TanStack Query Integration** - Pre-built React hooks for data fetching and mutations
-- 🔧 **Highly Configurable** - Customize naming conventions, cases, and output formats
+- **Automatic Route Scanning**: Parses Axum controller files to extract route metadata.
+- **Rust Enum Generation**: Produces type-safe Rust enums for all application routes with parameter validation.
+- **TypeScript Client**: Generates a fully-typed TypeScript client with pre-built React Query hooks.
+- **Compile-Time Safety**: Catch routing errors and mismatched parameters at compile time.
+- **Highly Configurable**: Customize naming conventions, path prefixes, and output formats to match your project's style.
 
 ## Installation
 
-Add to your `Cargo.toml`:
+Add the crate to your `Cargo.toml`:
 
 ```toml
 [dependencies]
@@ -22,48 +36,52 @@ route-info-builder = "0.1"
 
 ## Quick Start
 
-### 1. Configure Your Build Script
+### 1. Configure the Build Script
 
-Create a `build.rs` file in your project root:
+Create a `build.rs` file in your project root to define the scanning and generation parameters:
 
 ```rust
 use route_info_builder::Config;
+use std::path::PathBuf;
 
 fn main() {
     let config = Config {
-        controllers_path: std::path::PathBuf::from("src/controllers"),
-        output_file: Some("src/links.rs".to_string()),
+        controllers_path: PathBuf::from("src/controllers"),
+        output_file: Some("src/generated/links.rs".to_string()),
         generate_typescript_client: Some(true),
-        typescript_client_output: Some(std::path::PathBuf::from("frontend/src/api/client.ts")),
+        typescript_client_output: Some(PathBuf::from("frontend/src/api/client.ts")),
         ..Default::default()
     };
 
-    route_info_builder::generate_links(&config).unwrap();
+    route_info_builder::generate_links(&config).expect("Failed to generate route links");
 }
 ```
 
 ### 2. Use Generated Links in Rust
 
+Import the generated enum to ensure type-safe route construction and Axum integration:
+
 ```rust
-// Generated links enum
-use crate::links::Link;
+use crate::generated::links::Link;
 
-// Type-safe route usage
-let user_link = Link::GetUsers { user_id: "123".to_string() };
-println!("Path: {}", user_link.to_path()); // "/users/123"
-println!("Method: {}", user_link.method()); // "GET"
+// Type-safe route usage with parameters
+let user_link = Link::GetUser { user_id: "123".to_string() };
 
-// In Axum routes
-app.route(&user_link.to_path(), get(handler))
-    .route(&another_link.to_path(), post(handler));
+println!("Path: {}", user_link.to_path());   // "/api/users/123"
+println!("Method: {}", user_link.method());  // "GET"
+
+// In Axum router setup
+app.route(&Link::GetUsers.to_path(), get(get_users_handler))
+   .route(&user_link.to_path(), get(get_user_handler));
 ```
 
-### 3. Use TypeScript Client in Frontend
+### 3. Use the TypeScript Client in Frontend
+
+Import the generated hooks directly into your React components:
 
 ```typescript
 import { useGetUsers, useCreateUser } from './api/client';
 
-// React component
 function UserList() {
   const { data: users, isLoading } = useGetUsers();
   const createUser = useCreateUser();
@@ -72,9 +90,7 @@ function UserList() {
 
   return (
     <div>
-      {users.map(user => (
-        <div key={user.id}>{user.name}</div>
-      ))}
+      {users.map(user => <div key={user.id}>{user.name}</div>)}
       <button onClick={() => createUser.mutate({ name: 'New User' })}>
         Create User
       </button>
@@ -85,97 +101,36 @@ function UserList() {
 
 ## Configuration
 
-### Basic Configuration
+The `Config` struct provides extensive control over the generation process:
 
+| Option | Type | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `controllers_path` | `PathBuf` | **Required.** Path to the directory containing Axum controllers. | `None` |
+| `output_file` | `Option<String>` | Output path for the generated Rust links enum. | `"links.rs"` |
+| `generate_typescript_client` | `Option<bool>` | Enable TypeScript client generation. | `false` |
+| `typescript_client_output` | `Option<PathBuf>` | Output path for the generated TypeScript client. | `None` |
+| `include_method_in_names` | `Option<bool>` | Include the HTTP method in the generated variant names. | `false` |
+| `path_prefix_to_remove` | `Option<String>` | Strip a specific prefix (e.g., `/api`) from generated paths. | `None` |
+| `variant_case` | `Option<String>` | Casing for enum variants (e.g., `"PascalCase"`). | `"PascalCase"` |
+| `field_case` | `Option<String>` | Casing for route parameter fields (e.g., `"snake_case"`). | `"snake_case"` |
+
+> [!TIP]
+> **Recommended Project Structure**
+> ```text
+> my-project/
+> ├── Cargo.toml
+> ├── build.rs
+> ├── src/
+> │   ├── controllers/      # Your Axum route definitions
+> │   └── generated/        # Ignored in git, contains links.rs
+> └── frontend/
+>     └── src/api/          # Ignored in git, contains client.ts
+> ```
+
+## Generated Output Examples
+
+### Rust Enum
 ```rust
-let config = Config {
-    controllers_path: PathBuf::from("src/controllers"),
-    output_file: Some("src/links.rs".to_string()),
-    ..Default::default()
-};
-```
-
-### Full Configuration Options
-
-```rust
-let config = Config {
-    // Required: Path to controllers directory
-    controllers_path: PathBuf::from("src/controllers"),
-    
-    // Optional: Output file for Rust links (default: "links.rs")
-    output_file: Some("src/generated/links.rs".to_string()),
-    
-    // Naming options
-    include_method_in_names: Some(true), // Include HTTP method in variant names
-    path_prefix_to_remove: Some("/api".to_string()), // Remove prefix from paths
-    variant_case: Some("PascalCase".to_string()), // Case for enum variants
-    field_case: Some("snake_case".to_string()), // Case for field names
-    word_separators: Some("-_".to_string()), // Characters treated as word separators
-    
-    // TypeScript generation
-    generate_typescript_client: Some(true),
-    typescript_client_output: Some(PathBuf::from("frontend/src/api.ts")),
-    
-    // Advanced naming
-    variant_prefix: Some("".to_string()), // Prefix for variant names
-    variant_suffix: Some("".to_string()), // Suffix for variant names
-    preserve_numbers: Some(true), // Treat numbers as separate words
-};
-```
-
-## Project Structure
-
-### Recommended Layout
-
-```
-my-project/
-├── Cargo.toml
-├── build.rs
-├── src/
-│   ├── main.rs
-│   ├── lib.rs
-│   ├── controllers/
-│   │   ├── mod.rs
-│   │   ├── user.rs
-│   │   └── post.rs
-│   └── generated/
-│       └── links.rs  # Generated file
-└── frontend/
-    └── src/
-        └── api/
-            └── client.ts  # Generated TypeScript client
-```
-
-### Example Controller
-
-```rust
-// src/controllers/user.rs
-use axum::{
-    routing::{get, post, delete},
-    Router,
-};
-
-pub fn routes() -> Router {
-    Router::new()
-        .prefix("/api")
-        .add("/users", get(get_users))
-        .add("/users/{user_id}", get(get_user))
-        .add("/users", post(create_user))
-        .add("/users/{user_id}", delete(delete_user))
-}
-
-async fn get_users() -> &'static str { "Get all users" }
-async fn get_user() -> &'static str { "Get user" }
-async fn create_user() -> &'static str { "Create user" }
-async fn delete_user() -> &'static str { "Delete user" }
-```
-
-## Generated Output
-
-### Rust Enum Example
-
-```rust
-/// Auto-generated link enum for all application routes
 #[derive(Debug, Clone, PartialEq)]
 pub enum Link {
     GetUsers,
@@ -185,50 +140,40 @@ pub enum Link {
 }
 
 impl Link {
-    /// Convert the link to a URL path string
     pub fn to_path(&self) -> String {
         match self {
             Link::GetUsers => "/api/users".to_string(),
             Link::GetUser { user_id } => format!("/api/users/{}", user_id),
-            // ... other variants
+            // ...
         }
     }
 
-    /// Get the HTTP method for this route
     pub fn method(&self) -> &'static str {
         match self {
             Link::GetUsers => "GET",
             Link::GetUser { .. } => "GET",
-            // ... other variants
+            // ...
         }
     }
 }
 ```
 
-### TypeScript Client Example
-
+### TypeScript Client
 ```typescript
-// Generated TypeScript client with React Query hooks
 import { useQuery, useMutation } from "@tanstack/react-query";
 
 export const client = {
-  getUsers: () => ({
-    url: `/api/users`,
-    method: 'GET',
-  }),
-  getUser: (params: GetUserParams) => ({
+  getUser: (params: { userId: string }) => ({
     url: `/api/users/${params.userId}`,
     method: 'GET',
   }),
-  // ... other methods
 };
 
-// Hooks for React components
-export function useGetUsers(options?: Omit<UseQueryOptions<any, Error>, "queryKey">) {
+export function useGetUser(params: { userId: string }, options?: any) {
   return useQuery({
-    queryKey: ["getUsers"],
+    queryKey: ["getUser", params],
     queryFn: () => {
-      const { url, method } = client.getUsers();
+      const { url, method } = client.getUser(params);
       return fetch(url, { method }).then(res => res.json());
     },
     ...options,
@@ -238,85 +183,28 @@ export function useGetUsers(options?: Omit<UseQueryOptions<any, Error>, "queryKe
 
 ## Naming Conventions
 
-The library supports multiple naming conventions through the `convert_case` crate:
-
-### Supported Cases
-- **PascalCase**: `GetUserById`
-- **camelCase**: `getUserById` 
-- **snake_case**: `get_user_by_id`
-- **kebab-case**: `get-user-by-id`
-- **Title Case**: `Get User By Id`
-
-### Route to Name Conversion
+The library uses the `convert_case` crate to transform route paths into idiomatic names. 
 
 | Route | Method | Generated Name (PascalCase) |
-|-------|--------|----------------------------|
+| :--- | :--- | :--- |
 | `/users` | GET | `GetUsers` |
 | `/users/{id}` | GET | `GetUserById` |
 | `/api/posts/{post_id}/comments` | POST | `CreatePostComment` |
 
-## Advanced Usage
-
-### Custom Route Parameters
-
-```rust
-// Handle complex parameter types
-let link = Link::SearchUsers { 
-    query: "john".to_string(),
-    page: "1".to_string(),
-    limit: "10".to_string() 
-};
-```
-
-### Integration with Frontend Frameworks
-
-The generated TypeScript client works with:
-- **React** (with TanStack Query)
-- **Vue** (with Vue Query)
-- **Svelte** (with Svelte Query)
-- **Any framework** (raw client methods available)
-
-### Error Handling
-
-Duplicate routes are automatically detected and warnings are emitted during build:
-
-```
-cargo:warning=Duplicate route skipped: GET /api/users
-```
+> [!NOTE]
+> Numbers are treated as separate words by default (e.g., `v1` becomes `V1`). This behavior can be toggled via the `preserve_numbers` configuration flag.
 
 ## Troubleshooting
 
-### Common Issues
-
-1. **Routes not found**: Ensure your controller files have a `routes()` function
-2. **Build errors**: Check that all controller files are valid Rust syntax
-3. **Duplicate variants**: Use `path_prefix_to_remove` or adjust naming configuration
-
-### Debugging
-
-Enable verbose output by checking the cargo warnings:
-
-```
-cargo:warning=Generated Rust links enum at: src/links.rs
-cargo:warning=Generated TypeScript client at: frontend/src/api.ts
-```
+> [!WARNING]
+> **Common Issues**
+> - **Routes not found**: Ensure your controller files expose a `routes()` function or follow the expected Axum `Router` construction pattern.
+> - **Duplicate variants**: If multiple routes resolve to the same name, use `path_prefix_to_remove` or enable `include_method_in_names` to differentiate them. The build script will emit `cargo:warning` messages for skipped duplicates.
+> - **Build errors**: Verify that all files in `controllers_path` contain valid Rust syntax, as the scanner parses them as ASTs.
 
 ## API Reference
 
-### Main Functions
-
-- `generate_links(config: &Config)` - Main function to generate both Rust and TypeScript outputs
-- `generate_ts_client(config: &Config)` - Generate only TypeScript client
-
-### Data Structures
-
-- `Config` - Configuration for route scanning and code generation
-- `RouteInfo` - Information about a single route (name, path, method)
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit pull requests or open issues for bugs and feature requests.
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+- **`generate_links(config: &Config)`**: Main entry point. Scans controllers and generates both Rust and TypeScript outputs.
+- **`generate_ts_client(config: &Config)`**: Generates only the TypeScript client.
+- **`Config`**: Central configuration struct for path resolution, naming rules, and output targets.
+- **`RouteInfo`**: Internal representation of a parsed route (name, path, method, parameters).

@@ -24,11 +24,6 @@ impl TypeImportManager {
                 self.extract_importable_types(body_type);
             }
 
-            // Handle query parameter types
-            if let Some(query_type) = &route.handler_info.query_params {
-                self.extract_importable_types(query_type);
-            }
-
             // Handle return types
             if let Some(return_type) = &route.handler_info.return_type.found_type
                 && route.handler_info.return_type.is_importable
