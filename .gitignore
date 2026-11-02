@@ -1,1 +1,7 @@
 /target
+**/*.rs.bk
+# Generated outputs (typical build-script destinations)
+src/generated/
+frontend/src/api/
+openapi.json
+routes.json
