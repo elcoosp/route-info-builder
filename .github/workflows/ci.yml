@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  fmt:
+    name: Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: Clippy (pedantic, deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # Pedantic lints are denied in [lints.clippy]; -D warnings makes the
+      # remaining default lints fatal as well. No allow attributes exist.
+      - run: cargo clippy --all-features --all-targets -- -D warnings
+
+  test:
+    name: Tests (${{ matrix.rust }} / ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rust: stable
+            os: ubuntu-latest
+          - rust: stable
+            os: macos-latest
+          - rust: stable
+            os: windows-latest
+          - rust: "1.88" # MSRV: let-chains stabilized in the 2024 edition
+            os: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@${{ matrix.rust }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.rust }}-${{ matrix.os }}
+      - run: cargo test --all-features
+      - run: cargo test --no-default-features
+
+  coverage:
+    name: Coverage (100% lines)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      - run: cargo llvm-cov --all-features --fail-under-lines 100 --lcov --output-path lcov.info
+      - uses: actions/upload-artifact@v5
+        with:
+          name: lcov-report
+          path: lcov.info
+
+  package:
+    name: Package and docs dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo package --all-features --allow-dirty
+      - run: cargo doc --all-features --no-deps
+
+  semver-checks:
+    name: Semver checks
+    runs-on: ubuntu-latest
+    continue-on-error: true # informational while the crate is 0.x
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          feature-group: default-features
