@@ -56,7 +56,7 @@ jobs:
           ref: refs/tags/${{ github.ref_name }}
 
       - name: Create or update the GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           body: ${{ steps.cliff.outputs.changelog }}
           files: CHANGELOG.md
