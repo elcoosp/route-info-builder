@@ -1,117 +1,186 @@
-use crate::RouteInfo;
-use std::collections::HashSet;
-use ts_quote::ts_string;
+//! Shared bookkeeping for TypeScript type imports collected from routes.
 
-/// Shared utilities for handling TypeScript type imports
-pub struct TypeImportManager {
-    pub type_imports: HashSet<String>,
-    pub error_imports: HashSet<String>,
+use std::collections::BTreeSet;
+
+use crate::parser::RouteInfo;
+
+/// Collects the user types referenced by routes and renders their import
+/// statements from the configured bindings directory.
+#[derive(Debug, Default)]
+pub(crate) struct TypeImportManager {
+    type_imports: BTreeSet<String>,
+    error_imports: BTreeSet<String>,
 }
 
 impl TypeImportManager {
-    pub fn new() -> Self {
-        Self {
-            type_imports: HashSet::new(),
-            error_imports: HashSet::new(),
-        }
-    }
-
-    /// Collect all importable types from routes
-    pub fn collect_from_routes(&mut self, routes: &[RouteInfo]) {
+    /// Collects body, return and error types from all routes.
+    pub(crate) fn collect_from_routes(&mut self, routes: &[RouteInfo]) {
         for route in routes {
-            // Handle body types
             if let Some(body_type) = &route.handler_info.body_param {
-                self.extract_importable_types(body_type);
+                self.collect_type(body_type);
             }
-
-            // Handle return types
+            if let Some(query_type) = &route.handler_info.query_params {
+                self.collect_type(query_type);
+            }
             if let Some(return_type) = &route.handler_info.return_type.found_type
                 && route.handler_info.return_type.is_importable
             {
-                self.extract_importable_types(return_type);
+                self.collect_type(return_type);
             }
-
-            // Handle error types
             for error_type in &route.handler_info.return_type.error_types {
                 self.error_imports.insert(error_type.clone());
             }
         }
     }
 
-    /// Extract importable types from type strings, handling generics like Array<T>
-    pub fn extract_importable_types(&mut self, type_str: &str) {
-        // Check if this is a generic type like Array<T>
-        if let Some(inner_type) = Self::extract_generic_inner_type(type_str) {
-            // Recursively extract inner types (for nested generics)
-            self.extract_importable_types(&inner_type);
+    /// Registers a type, unwrapping generics such as `Array<T>`,
+    /// `Option<T>` and `Result<T, E>` recursively.
+    pub(crate) fn collect_type(&mut self, type_str: &str) {
+        if let Some(inner) = Self::generic_inner_type(type_str) {
+            self.collect_type(&inner);
         } else if !Self::is_builtin_type(type_str) {
-            // Only add non-builtin types
             self.type_imports.insert(type_str.to_string());
         }
     }
 
-    /// Extract the inner type from generic types like Array<T>, Option<T>, etc.
-    fn extract_generic_inner_type(type_str: &str) -> Option<String> {
-        if type_str.starts_with("Array<") && type_str.ends_with('>') {
-            Some(type_str[6..type_str.len() - 1].to_string())
-        } else if type_str.starts_with("Option<") && type_str.ends_with('>') {
-            Some(type_str[7..type_str.len() - 1].to_string())
-        } else if type_str.starts_with("Result<") && type_str.ends_with('>') {
-            // For Result<T, E>, we only care about the success type T
-            let inner = &type_str[7..type_str.len() - 1];
-            inner.split(',').next().map(|s| s.trim().to_string())
-        } else {
-            None
+    /// Inner type name of simple generic wrappers.
+    fn generic_inner_type(type_str: &str) -> Option<String> {
+        let unwrap_suffix = |prefix: &str| -> Option<String> {
+            let inner = type_str.strip_prefix(prefix)?;
+            let inner = inner.strip_suffix('>')?;
+            Some(inner.trim().to_string())
+        };
+        if let Some(inner) = unwrap_suffix("Array<") {
+            return Some(inner);
         }
+        if let Some(inner) = unwrap_suffix("Option<") {
+            return Some(inner);
+        }
+        // `Result<T, E>`: only the success type is relevant.
+        unwrap_suffix("Result<").map(|inner| {
+            inner
+                .split(',')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_string()
+        })
     }
 
-    /// Check if a type is a built-in TypeScript type that shouldn't be imported
-    fn is_builtin_type(type_name: &str) -> bool {
-        type_name == "string" ||
-        type_name == "number" ||
-        type_name == "boolean" ||
-        type_name == "any" ||
-        type_name == "void" ||
-        type_name == "unknown" ||
-        type_name == "null" ||
-        type_name == "undefined" ||
-        type_name == "Array" ||  // Array without generic is built-in
-        type_name == "Promise" // Promise is built-in
+    /// Built-in TypeScript types that must not be imported.
+    fn is_builtin_type(name: &str) -> bool {
+        matches!(
+            name,
+            "string"
+                | "number"
+                | "boolean"
+                | "any"
+                | "void"
+                | "unknown"
+                | "null"
+                | "undefined"
+                | "Array"
+                | "Promise"
+        )
     }
 
-    /// Generate import statements for collected types
-    pub fn generate_imports(&self) -> Vec<String> {
-        let mut imports = Vec::new();
-
-        // Generate type imports
-        for type_name in &self.type_imports {
-            // FIXME get path from config
-            let import_path = format!("\"../../../bindings/{type_name}\"");
-            imports.push(
-                ts_string! {
-                    import { type #type_name } from #import_path;
-                }
-                .to_string(),
-            );
-        }
-
-        // Generate error type imports
-        for type_name in &self.error_imports {
-            let import_path = format!("\"../../../bindings/{type_name}\"");
-            imports.push(
-                ts_string! {
-                    import { type #type_name } from #import_path;
-                }
-                .to_string(),
-            );
-        }
-
-        imports
+    /// Sorted, deterministic import statements for all collected types.
+    pub(crate) fn generate_imports(&self, bindings_path: &str) -> Vec<String> {
+        self.type_imports
+            .union(&self.error_imports)
+            .map(|type_name| {
+                format!("import {{ type {type_name} }} from \"{bindings_path}/{type_name}\";")
+            })
+            .collect()
     }
 }
 
-impl Default for TypeImportManager {
-    fn default() -> Self {
-        Self::new()
+#[cfg(test)]
+mod tests {
+    use super::TypeImportManager;
+    use crate::parser::{HandlerInfo, RouteInfo, handlers::ReturnType};
+    use std::collections::BTreeSet;
+
+    fn route(
+        body: Option<&str>,
+        found: Option<&str>,
+        importable: bool,
+        errors: &[&str],
+    ) -> RouteInfo {
+        RouteInfo {
+            name: "get_x".to_string(),
+            path: "/x".to_string(),
+            method: "GET".to_string(),
+            handler: "get_x_handler".to_string(),
+            handler_info: HandlerInfo {
+                body_param: body.map(str::to_string),
+                query_params: None,
+                requires_auth: false,
+                return_type: ReturnType {
+                    found_type: found.map(str::to_string),
+                    is_importable: importable,
+                    error_types: errors.iter().map(|error| (*error).to_string()).collect(),
+                    error_variants: BTreeSet::new(),
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn collects_unwrapping_generics_and_skips_builtins() {
+        let mut manager = TypeImportManager::default();
+        manager.collect_type("Array<UserResponse>");
+        manager.collect_type("Option<Nested>");
+        manager.collect_type("Result<Deep, Error>");
+        manager.collect_type("string");
+        manager.collect_type("Array");
+        manager.collect_type("Promise");
+        manager.collect_type("Plain");
+        manager.collect_type("Array<  Spaced  >");
+        let imports = manager.generate_imports("../bindings");
+        assert_eq!(
+            imports,
+            vec![
+                "import { type Deep } from \"../bindings/Deep\";",
+                "import { type Nested } from \"../bindings/Nested\";",
+                "import { type Plain } from \"../bindings/Plain\";",
+                "import { type Spaced } from \"../bindings/Spaced\";",
+                "import { type UserResponse } from \"../bindings/UserResponse\";",
+            ]
+        );
+    }
+
+    #[test]
+    fn error_imports_are_collected_from_routes() {
+        let routes = vec![
+            route(Some("CreateUserRequest"), None, false, &["BadRequest"]),
+            route(None, Some("UserResponse"), true, &[]),
+            route(None, Some("any"), true, &[]),
+        ];
+        let mut manager = TypeImportManager::default();
+        manager.collect_from_routes(&routes);
+        let imports = manager.generate_imports("../../../bindings");
+        assert_eq!(
+            imports,
+            vec![
+                "import { type BadRequest } from \"../../../bindings/BadRequest\";",
+                "import { type CreateUserRequest } from \"../../../bindings/CreateUserRequest\";",
+                "import { type UserResponse } from \"../../../bindings/UserResponse\";",
+            ]
+        );
+    }
+
+    #[test]
+    fn non_importable_return_types_are_ignored() {
+        let routes = vec![route(None, Some("UserResponse"), false, &[])];
+        let mut manager = TypeImportManager::default();
+        manager.collect_from_routes(&routes);
+        assert_eq!(manager.generate_imports("b"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn debug_is_available() {
+        let manager = TypeImportManager::default();
+        assert!(format!("{manager:?}").contains("TypeImportManager"));
     }
 }
