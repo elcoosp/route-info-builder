@@ -1,276 +1,337 @@
-use crate::{
-    RouteInfo,
-    config::TypeScriptConfig,
-    generators::{CodeGenerator, typescript::TypeImportManager},
-};
-use ts_quote::ts_string;
+//! `TanStack` Query hooks generator.
+//!
+//! Mirrors the client generator: a single parameter-descriptor-driven code
+//! path builds `useQuery` hooks for GET routes and `useMutation` hooks for
+//! everything else.
 
-pub struct TypeScriptHooksGenerator;
+use super::super::CodeGenerator;
+use super::{TypeImportManager, method_display_name, params_interface_name, pascal};
+use crate::configuration::TypeScriptConfig;
+use crate::error::Result;
+use crate::parser::RouteInfo;
+use std::collections::BTreeSet;
 
-impl CodeGenerator for TypeScriptHooksGenerator {
+/// Generates `useQuery`/`useMutation` hooks delegating to the client file.
+pub struct HooksGenerator;
+
+impl CodeGenerator for HooksGenerator {
     type Config = TypeScriptConfig;
     type Output = String;
 
-    fn generate(
-        routes: &[RouteInfo],
-        _config: &Self::Config,
-    ) -> Result<Self::Output, Box<dyn std::error::Error>> {
-        let mut imports = Vec::new();
-        let mut hooks = Vec::new();
-        let mut client_imports = Vec::new();
+    fn generate(routes: &[RouteInfo], config: &Self::Config) -> Result<Self::Output> {
+        let mut sections: Vec<String> = Vec::new();
+        sections.push(imports_section(routes, config));
 
-        // Initialize type import manager and collect types
-        let mut type_manager = TypeImportManager::new();
-        type_manager.collect_from_routes(routes);
+        let hooks = routes
+            .iter()
+            .map(hook_function)
+            .collect::<Vec<_>>()
+            .join("\n");
+        sections.push(hooks);
 
-        // Import necessary types from the client
-        imports.push(ts_string! {
-               import { type ApiError, type BadRequestErrorDetails, isBadRequestError, client } from "./client";
-           });
-
-        // Tanstack query imports
-        imports.push(ts_string! {
-               import { useQuery, useMutation, type UseQueryOptions, type UseMutationOptions } from "@tanstack/react-query";
-           });
-
-        // Add type imports from the shared manager
-        imports.extend(type_manager.generate_imports());
-
-        for route in routes {
-            let method_name = crate::utils::case::convert_to_case(&route.name, "camel");
-            let hook_name = format!(
-                "use{}",
-                crate::utils::case::convert_to_case(&route.name, "pascal")
-            );
-            let path_params = crate::utils::path::extract_parameters_from_path(&route.path);
-
-            // Add imports for path parameters if needed
-            if !path_params.is_empty() {
-                let interface_name = format!(
-                    "{}Params",
-                    crate::utils::case::convert_to_case(&method_name, "pascal")
-                );
-                client_imports.push(format!("type {interface_name}"));
-            }
-
-            // Add imports for query parameters if needed
-            if let Some(query_type) = &route.handler_info.query_params {
-                client_imports.push(format!("type {query_type}"));
-            }
-
-            // Generate hook with proper error union type
-            let hook = generate_ts_hook(route, &method_name, &hook_name, &path_params);
-            hooks.push(hook);
-        }
-
-        if !client_imports.is_empty() {
-            let client_imports_str = client_imports.join(", ");
-            imports.push(ts_string! {
-                import { #client_imports_str } from "./client";
-            });
-        }
-
-        let imports_str = imports.join("\n");
-        let hooks_str = hooks.join("\n");
-
-        // Combine all parts
-        let ts_code = ts_string! {
-            #imports_str
-
-            // Re-export error utilities for convenience
-            export { type ApiError, type BadRequestErrorDetails, isBadRequestError };
-
-            // Hooks
-            #hooks_str
-        };
-
-        // Format the TypeScript code
-        let formatted = super::format_ts_code(&ts_code.to_string())?;
-        Ok(formatted)
+        Ok(sections.join("\n\n"))
     }
 }
 
-fn generate_ts_hook(
-    route: &RouteInfo,
-    method_name: &str,
-    hook_name: &str,
-    path_params: &[String],
-) -> String {
-    let method_name_str = format!("\"{method_name}\"");
-    let body_type = route.handler_info.body_param.as_deref().unwrap_or("void");
-    let query_type = route.handler_info.query_params.as_deref().unwrap_or("void");
+/// Import statements plus the convenience re-exports for the hooks file.
+fn imports_section(routes: &[RouteInfo], config: &TypeScriptConfig) -> String {
+    let mut lines = vec![
+        "import { type ApiError, type BadRequestErrorDetails, isBadRequestError, client } from \"./client\";"
+            .to_string(),
+        "import { useQuery, useMutation, type UseQueryOptions, type UseMutationOptions } from \"@tanstack/react-query\";"
+            .to_string(),
+    ];
+
+    let mut manager = TypeImportManager::default();
+    manager.collect_from_routes(routes);
+    lines.extend(manager.generate_imports(config.bindings_path()));
+
+    let mut client_type_imports: BTreeSet<String> = BTreeSet::new();
+    for route in routes {
+        if !crate::utils::path::extract_parameters_from_path(&route.path).is_empty() {
+            client_type_imports.insert(format!("type {}", params_interface_name(route)));
+        }
+    }
+    if !client_type_imports.is_empty() {
+        let joined = client_type_imports
+            .into_iter()
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(format!("import {{ {joined} }} from \"./client\";"));
+    }
+
+    lines.push(
+        "// Re-export error utilities for convenience\nexport { type ApiError, type BadRequestErrorDetails, isBadRequestError };"
+            .to_string(),
+    );
+    lines.join("\n")
+}
+
+/// The hook function for a single route.
+fn hook_function(route: &RouteInfo) -> String {
+    let hook_name = format!("use{}", pascal(&route.name));
+    let method_name = method_display_name(route);
     let return_type = route
         .handler_info
         .return_type
         .found_type
         .as_deref()
         .unwrap_or("any");
-    let _requires_auth = route.handler_info.requires_auth;
-
-    // All hooks now use ApiError as the error type
-    let error_type = "ApiError";
-
-    let has_path_params = !path_params.is_empty();
-    let has_query_params = route.handler_info.query_params.is_some();
-    let has_body = route.method != "GET" && body_type != "void";
+    let params_type = params_interface_name(route);
+    let query_type = route.handler_info.query_params.as_deref();
+    let body_type = if route.method == "GET" {
+        None
+    } else {
+        route.handler_info.body_param.as_deref()
+    };
 
     if route.method == "GET" {
-        // GET hooks (useQuery)
-        if !has_path_params && !has_query_params {
-            // No parameters
-            ts_string! {
-                export function #hook_name(options?: Omit<UseQueryOptions<#return_type, #error_type>, "queryKey">) {
-                    return useQuery({
-                        queryKey: [#method_name_str],
-                        queryFn: ({ signal }) => client.#method_name({ signal }),
-                        ...options,
-                    });
-                }
-            }
-        } else if has_path_params && !has_query_params {
-            // Only path parameters
-            let params_type = format!(
-                "{}Params",
-                crate::utils::case::convert_to_case(method_name, "pascal")
-            );
-            ts_string! {
-                export function #hook_name(params: #params_type, options?: Omit<UseQueryOptions<#return_type, #error_type>, "queryKey">) {
-                    return useQuery({
-                        queryKey: [#method_name_str, params],
-                        queryFn: ({ signal }) => client.#method_name(params, { signal }),
-                        ...options,
-                    });
-                }
-            }
-        } else if !has_path_params && has_query_params {
-            // Only query parameters
-            ts_string! {
-                export function #hook_name(query: #query_type, options?: Omit<UseQueryOptions<#return_type, #error_type>, "queryKey">) {
-                    return useQuery({
-                        queryKey: [#method_name_str, query],
-                        queryFn: ({ signal }) => client.#method_name(query, { signal }),
-                        ...options,
-                    });
-                }
-            }
-        } else {
-            // Both path and query parameters
-            let params_type = format!(
-                "{}Params",
-                crate::utils::case::convert_to_case(method_name, "pascal")
-            );
-            ts_string! {
-                export function #hook_name(params: #params_type, query: #query_type, options?: Omit<UseQueryOptions<#return_type, #error_type>, "queryKey">) {
-                    return useQuery({
-                        queryKey: [#method_name_str, params, query],
-                        queryFn: ({ signal }) => client.#method_name(params, query, { signal }),
-                        ...options,
-                    });
-                }
-            }
-        }
+        query_hook(
+            &hook_name,
+            &method_name,
+            return_type,
+            has_path_params(route),
+            &params_type,
+            query_type,
+        )
     } else {
-        // Mutation hooks (useMutation) - use proper body and return types
-        if !has_path_params && !has_query_params && !has_body {
-            // No parameters at all
-            ts_string! {
-                export function #hook_name(options?: UseMutationOptions<#return_type, #error_type, void, unknown>) {
-                    return useMutation({
-                        mutationFn: () => client.#method_name(),
-                        ...options,
-                    });
-                }
-            }
-        } else if has_path_params && !has_query_params && !has_body {
-            // Only path parameters
-            let params_type = format!(
-                "{}Params",
-                crate::utils::case::convert_to_case(method_name, "pascal")
-            );
-            ts_string! {
-                export function #hook_name(options?: UseMutationOptions<#return_type, #error_type, #params_type, unknown>) {
-                    return useMutation({
-                        mutationFn: (params: #params_type) => client.#method_name(params),
-                        ...options,
-                    });
-                }
-            }
-        } else if !has_path_params && has_query_params && !has_body {
-            // Only query parameters
-            ts_string! {
-                export function #hook_name(options?: UseMutationOptions<#return_type, #error_type, #query_type, unknown>) {
-                    return useMutation({
-                        mutationFn: (query: #query_type) => client.#method_name(query),
-                        ...options,
-                    });
-                }
-            }
-        } else if has_path_params && has_query_params && !has_body {
-            // Path and query parameters, no body
-            let params_type = format!(
-                "{}Params",
-                crate::utils::case::convert_to_case(method_name, "pascal")
-            );
-            ts_string! {
-                export function #hook_name(options?: UseMutationOptions<#return_type, #error_type, { params: #params_type, query: #query_type }, unknown>) {
-                    return useMutation({
-                        mutationFn: (input: { params: #params_type, query: #query_type }) =>
-                            client.#method_name(input.params, input.query),
-                        ...options,
-                    });
-                }
-            }
-        } else if !has_path_params && !has_query_params && has_body {
-            // Only body
-            ts_string! {
-                export function #hook_name(options?: UseMutationOptions<#return_type, #error_type, #body_type, unknown>) {
-                    return useMutation({
-                        mutationFn: (body: #body_type) => client.#method_name(body),
-                        ...options,
-                    });
-                }
-            }
-        } else if has_path_params && !has_query_params && has_body {
-            // Path parameters and body
-            let params_type = format!(
-                "{}Params",
-                crate::utils::case::convert_to_case(method_name, "pascal")
-            );
-            ts_string! {
-                export function #hook_name(options?: UseMutationOptions<#return_type, #error_type, { params: #params_type, body: #body_type }, unknown>) {
-                    return useMutation({
-                        mutationFn: (input: { params: #params_type, body: #body_type }) =>
-                            client.#method_name(input.params, input.body),
-                        ...options,
-                    });
-                }
-            }
-        } else if !has_path_params && has_query_params && has_body {
-            // Query parameters and body
-            ts_string! {
-                export function #hook_name(options?: UseMutationOptions<#return_type, #error_type, { query: #query_type, body: #body_type }, unknown>) {
-                    return useMutation({
-                        mutationFn: (input: { query: #query_type, body: #body_type }) =>
-                            client.#method_name(input.query, input.body),
-                        ...options,
-                    });
-                }
-            }
-        } else {
-            // All three: path parameters, query parameters, and body
-            let params_type = format!(
-                "{}Params",
-                crate::utils::case::convert_to_case(method_name, "pascal")
-            );
-            ts_string! {
-                export function #hook_name(options?: UseMutationOptions<#return_type, #error_type, { params: #params_type, query: #query_type, body: #body_type }, unknown>) {
-                    return useMutation({
-                        mutationFn: (input: { params: #params_type, query: #query_type, body: #body_type }) =>
-                            client.#method_name(input.params, input.query, input.body),
-                        ...options,
-                    });
-                }
-            }
+        mutation_hook(
+            &hook_name,
+            &method_name,
+            return_type,
+            has_path_params(route),
+            &params_type,
+            query_type,
+            body_type,
+        )
+    }
+}
+
+/// Whether the route path declares parameters.
+fn has_path_params(route: &RouteInfo) -> bool {
+    !crate::utils::path::extract_parameters_from_path(&route.path).is_empty()
+}
+
+/// Builds a `useQuery` hook for a GET route.
+fn query_hook(
+    hook_name: &str,
+    method_name: &str,
+    return_type: &str,
+    has_params: bool,
+    params_type: &str,
+    query_type: Option<&str>,
+) -> String {
+    let mut signature: Vec<String> = Vec::new();
+    let mut query_key_items = vec![format!("\"{method_name}\"")];
+    let mut client_arguments: Vec<String> = Vec::new();
+
+    if has_params {
+        signature.push(format!("params: {params_type}"));
+        query_key_items.push("params".to_string());
+        client_arguments.push("params".to_string());
+    }
+    if let Some(query_type) = query_type {
+        signature.push(format!("query: {query_type}"));
+        query_key_items.push("query".to_string());
+        client_arguments.push("query".to_string());
+    }
+    signature.push(format!(
+        "options?: Omit<UseQueryOptions<{return_type}, ApiError>, \"queryKey\">"
+    ));
+
+    let signature = signature.join(", ");
+    let key = query_key_items.join(", ");
+    let client_arguments = client_arguments.join(", ");
+    let signal_argument = if client_arguments.is_empty() {
+        "{ signal }".to_string()
+    } else {
+        format!("{client_arguments}, {{ signal }}")
+    };
+    format!(
+        "export function {hook_name}({signature}) {{\n  return useQuery({{\n    queryKey: [{key}],\n    queryFn: ({{ signal }}) => client.{method_name}({signal_argument}),\n    ...options,\n  }});\n}}"
+    )
+}
+
+/// Builds a `useMutation` hook for a non-GET route.
+fn mutation_hook(
+    hook_name: &str,
+    method_name: &str,
+    return_type: &str,
+    has_params: bool,
+    params_type: &str,
+    query_type: Option<&str>,
+    body_type: Option<&str>,
+) -> String {
+    let mut variables: Vec<(&str, String)> = Vec::new();
+    if has_params {
+        variables.push(("params", params_type.to_string()));
+    }
+    if let Some(query_type) = query_type {
+        variables.push(("query", query_type.to_string()));
+    }
+    if let Some(body_type) = body_type {
+        variables.push(("body", body_type.to_string()));
+    }
+
+    let variables_type = match variables.len() {
+        0 => "void".to_string(),
+        1 => variables[0].1.clone(),
+        _ => {
+            let fields = variables
+                .iter()
+                .map(|(name, var_type)| format!("{name}: {var_type}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{{ {fields} }}")
         }
-    }.to_string()
+    };
+
+    let (mutation_argument, client_arguments) = match variables.len() {
+        0 => (String::new(), String::new()),
+        1 => {
+            let (name, var_type) = &variables[0];
+            (format!("{name}: {var_type}"), name.to_string())
+        }
+        _ => {
+            let names = variables
+                .iter()
+                .map(|(name, _)| format!("input.{name}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            ("input: OBJECT".to_string(), names)
+        }
+    };
+    let mutation_argument = mutation_argument.replace("OBJECT", &variables_type);
+
+    format!(
+        "export function {hook_name}(options?: UseMutationOptions<{return_type}, ApiError, {variables_type}, unknown>) {{\n  return useMutation({{\n    mutationFn: ({mutation_argument}) => client.{method_name}({client_arguments}),\n    ...options,\n  }});\n}}"
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{HooksGenerator, hook_function, imports_section, mutation_hook, query_hook};
+    use crate::configuration::TypeScriptConfig;
+    use crate::error::Result;
+    use crate::generators::CodeGenerator;
+    use crate::parser::{HandlerInfo, RouteInfo, handlers::ReturnType};
+    use std::collections::BTreeSet;
+
+    fn route(path: &str, method: &str, name: &str) -> RouteInfo {
+        RouteInfo {
+            name: name.to_string(),
+            path: path.to_string(),
+            method: method.to_string(),
+            handler: format!("{name}_handler"),
+            handler_info: HandlerInfo::default(),
+        }
+    }
+
+    #[test]
+    fn get_hook_without_params() {
+        let hook = hook_function(&route("/health", "GET", "get_health"));
+        assert_eq!(
+            hook,
+            "export function useGetHealth(options?: Omit<UseQueryOptions<any, ApiError>, \"queryKey\">) {\n  return useQuery({\n    queryKey: [\"getHealth\"],\n    queryFn: ({ signal }) => client.getHealth({ signal }),\n    ...options,\n  });\n}"
+        );
+    }
+
+    #[test]
+    fn get_hook_with_params_and_query() {
+        let mut rich = route("/users/{user_id}/feed", "GET", "get_user_feed");
+        rich.handler_info.query_params = Some("FeedQuery".to_string());
+        let hook = hook_function(&rich);
+        assert!(hook.starts_with("export function useGetUserFeed(params: GetUserFeedParams, query: FeedQuery, options?: Omit<UseQueryOptions<any, ApiError>, \"queryKey\">) {"));
+        assert!(hook.contains("queryKey: [\"getUserFeed\", params, query],"));
+        assert!(
+            hook.contains(
+                "queryFn: ({ signal }) => client.getUserFeed(params, query, { signal }),"
+            )
+        );
+    }
+
+    #[test]
+    fn mutation_hooks_cover_all_variable_shapes() {
+        let plain = hook_function(&route("/health", "POST", "post_health"));
+        assert!(plain.contains("UseMutationOptions<any, ApiError, void, unknown>"));
+        assert!(plain.contains("mutationFn: () => client.postHealth(),"));
+
+        let mut with_body = route("/users", "POST", "create_user");
+        with_body.handler_info.body_param = Some("CreateUserRequest".to_string());
+        let hook = hook_function(&with_body);
+        assert!(hook.contains("UseMutationOptions<any, ApiError, CreateUserRequest, unknown>"));
+        assert!(hook.contains("mutationFn: (body: CreateUserRequest) => client.createUser(body),"));
+
+        let mut with_query = route("/users", "POST", "post_user");
+        with_query.handler_info.query_params = Some("UserQuery".to_string());
+        let hook = hook_function(&with_query);
+        assert!(hook.contains("UseMutationOptions<any, ApiError, UserQuery, unknown>"));
+        assert!(hook.contains("mutationFn: (query: UserQuery) => client.postUser(query),"));
+
+        let mut with_params = route("/users/{user_id}", "PUT", "put_user");
+        with_params.handler_info.body_param = Some("UpdateUserRequest".to_string());
+        let hook = hook_function(&with_params);
+        assert!(hook.contains(
+            "UseMutationOptions<any, ApiError, { params: PutUserParams, body: UpdateUserRequest }, unknown>"
+        ));
+        assert!(hook.contains(
+            "mutationFn: (input: { params: PutUserParams, body: UpdateUserRequest }) => client.putUser(input.params, input.body),"
+        ));
+
+        let mut with_all = route("/users/{user_id}/settings", "PATCH", "patch_user_settings");
+        with_all.handler_info.query_params = Some("SettingsQuery".to_string());
+        with_all.handler_info.body_param = Some("SettingsRequest".to_string());
+        let hook = hook_function(&with_all);
+        assert!(hook.contains(
+            "UseMutationOptions<any, ApiError, { params: PatchUserSettingsParams, query: SettingsQuery, body: SettingsRequest }, unknown>"
+        ));
+        assert!(hook.contains(
+            "mutationFn: (input: { params: PatchUserSettingsParams, query: SettingsQuery, body: SettingsRequest }) => client.patchUserSettings(input.params, input.query, input.body),"
+        ));
+    }
+
+    #[test]
+    fn hooks_file_imports_client_types() -> Result<()> {
+        let mut rich = route("/users/{user_id}", "GET", "get_user");
+        rich.handler_info.query_params = Some("UserQuery".to_string());
+        rich.handler_info.return_type = ReturnType {
+            found_type: Some("UserResponse".to_string()),
+            is_importable: true,
+            error_types: BTreeSet::from(["BadRequest".to_string()]),
+            error_variants: BTreeSet::new(),
+        };
+        let code = HooksGenerator::generate(&[rich], &TypeScriptConfig::default())?;
+        assert!(code.contains("import { type ApiError, type BadRequestErrorDetails, isBadRequestError, client } from \"./client\";"));
+        assert!(
+            code.contains("import { type UserResponse } from \"../../../bindings/UserResponse\";")
+        );
+        assert!(code.contains("import { type BadRequest } from \"../../../bindings/BadRequest\";"));
+        assert!(code.contains("import { type GetUserParams } from \"./client\";"));
+        assert!(code.contains("import { type UserQuery } from \"../../../bindings/UserQuery\";"));
+        assert!(
+            code.contains(
+                "export { type ApiError, type BadRequestErrorDetails, isBadRequestError };"
+            )
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn imports_without_extra_types_stay_minimal() {
+        let imports = imports_section(
+            &[route("/health", "GET", "get_health")],
+            &TypeScriptConfig::default(),
+        );
+        assert!(!imports.contains("from \"./client\";\nimport { type"));
+        assert_eq!(imports.lines().count(), 4);
+    }
+
+    #[test]
+    fn helper_branches_are_exercised() {
+        // Ensure the unused-parameter branches of the builders stay covered.
+        let query = query_hook("useX", "getX", "Resp", false, "XParams", None);
+        assert!(query.contains("queryKey: [\"getX\"]"));
+        let mutation = mutation_hook("useY", "postY", "Resp", false, "YParams", None, None);
+        assert!(mutation.contains("UseMutationOptions<Resp, ApiError, void, unknown>"));
+    }
 }
