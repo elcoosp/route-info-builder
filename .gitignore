@@ -5,3 +5,6 @@ src/generated/
 frontend/src/api/
 openapi.json
 routes.json
+
+# Local helper: one conventional commit per file (not part of the history)
+commit.sh
