@@ -15,6 +15,7 @@ This page describes the crate's public API as exported from the crate root (`rou
 | `generate_links` | `(&Config) -> Result<String>` | Scans once; returns the Rust enum code and writes every configured output. |
 | `scan_routes` | `(&Config) -> Result<Vec<RouteInfo>>` | Returns the scanned routes. |
 | `scan_controllers_folder` | `(&Config) -> Result<Vec<RouteInfo>>` | Alias of `scan_routes`, kept for backward compatibility. |
+| `resolve_route_names` | `(&[RouteInfo], &NamingConfig) -> Vec<NamedRoute>` | Applies the naming rules and the collision strategy once; every generator consumes the resolved names. |
 | `generate_ts_client` | `(&Config) -> Result<String>` | Returns the TypeScript client code without writing files. |
 | `generate_ts_hooks` | `(&Config) -> Result<String>` | Returns the TanStack Query hooks code without writing files. |
 | `generate_openapi_json` | `(&Config) -> Result<String>` | Returns the OpenAPI 3.1 skeleton as a JSON string. |
@@ -52,6 +53,7 @@ Every write creates missing parent directories first. The returned `String` is t
 | `RouteMapConfig` | struct | The `[route_map]` keys. |
 | `CollisionStrategy` | enum | `Skip`, `AppendMethod`, `Number` (TOML: `skip`, `append-method`, `number`). |
 | `RouteInfo` | struct | One scanned route with naming and handler metadata. |
+| `NamedRoute` | struct | A `RouteInfo` plus its final, collision-resolved `variant` and `ts_name`. |
 | `HandlerInfo` | struct | Body/query extractors, auth flag, return type of the handler. |
 | `ReturnType` | struct | Detected conversion type and error information. |
 | `Error` | enum | All failures of the scan and generation pipeline; `#[non_exhaustive]`. |
@@ -79,6 +81,20 @@ Each configuration struct implements `Default`; each optional key has an accesso
 
 All three structs serialize with camelCase keys; see the [route map JSON reference](/reference/route-info-json/).
 
+### `NamedRoute`
+
+Name resolution is a single pipeline stage between scanning and generation: `resolve_route_names(&routes, &config.naming)` applies `variant_case`, `variant_prefix`/`variant_suffix`, `preserve_numbers` and the configured `collision_strategy` exactly once. Routes dropped under `skip` never reach a generator.
+
+| Field | Type | Meaning |
+| :--- | :--- | :--- |
+| `route` | `&RouteInfo` | The scanned route. |
+| `variant` | `String` | Final Rust enum variant body (`GetUsers`, `ApiGetUsersRoute`, ...). |
+| `ts_name` | `String` | camelCase of `variant`; the TypeScript client key, the hook name suffix and the OpenAPI `operationId` — always equal to the generated Rust `name()` value. |
+
+`NamedRoute::params_interface()` returns the `...Params` interface name used by the TypeScript artifacts.
+
+Because the Rust enum, the TypeScript client and hooks, and the OpenAPI document all consume the same resolved names, their identifiers stay in parity even when the naming configuration collapses distinct routes onto one base name (for example with `include_method_in_names = false`).
+
 ## Generators
 
 Every generator implements the `CodeGenerator` trait:
@@ -99,6 +115,8 @@ pub trait CodeGenerator {
 | `OpenApiGenerator` | `&OpenApiConfig` | `String` |
 
 Generators only return code; they never write files. Writing is `generate_links`'s job.
+
+Each generator also exposes a `generate_named(&[NamedRoute], config)` entry point that consumes pre-resolved names. The `generate(&[RouteInfo], ...)` trait methods resolve names internally — with the full `naming` configuration for the Rust generator and with the default naming rules for the TypeScript and OpenAPI generators, whose configs do not embed the scan-time naming. Prefer `generate_named` whenever the naming configuration is customized.
 
 ## Errors
 
