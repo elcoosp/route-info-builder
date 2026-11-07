@@ -1,0 +1,77 @@
+---
+title: "How scanning works"
+description: "The pipeline that turns controller files into route records — file collection, statement walking, path canonicalization, handler metadata and warnings."
+type: explanation
+---
+
+import { Aside, LinkCard } from '@astrojs/starlight/components';
+
+The scanner is a build-time reader of Rust source, not a compiler plugin and not a running program. It parses controller files into abstract syntax trees, walks those trees for router-registration calls, and derives everything else — names, types, errors — from the same syntax. That position between compilation and analysis explains most of what follows: what it sees, what it deliberately ignores, and why certain shapes of code are invisible to it.
+
+## Stage 1 — collect files
+
+The scanner walks `controllers_path` recursively and collects `*.rs` files. Three rules shape the collection: `mod.rs` files are skipped, names starting with a dot are skipped, and the surviving files are visited in sorted order. The sorted order is what makes the whole pipeline deterministic — the same source tree produces byte-identical output on every machine.
+
+## Stage 2 — find the builder function
+
+Each collected file is parsed with `syn`, and the file's top-level items are searched for a function whose name matches `controllers_fn` (default `routes`). A file without such a function contributes nothing; the function is looked up by name only, so its visibility and signature do not matter to the scanner.
+
+## Stage 3 — walk the registration statements
+
+The scanner then walks the *statements of that function's body*, looking for method calls it recognizes. Two registration dialects are understood:
+
+- **Loco style** — `Routes::new()`, `.prefix("/api/users")`, `.add("/", get(list_users))`.
+- **Axum style** — `Router::new()`, `.route("/api/posts", get(list_posts))`, `.nest("/api/admin", ...)`, `.merge(other_routes())`.
+
+A handful of behaviors are worth knowing precisely, because they decide what is visible:
+
+- `prefix` sets the prefix that every later `add`/`route` in the chain joins.
+- `nest` stacks its path onto the current prefix while walking the inner router, then restores the previous prefix — nesting composes.
+- `merge` walks its argument, so routes from merged builders are inlined into the same list.
+- A method-router chain such as `get(one).post(two)` emits one route per verb, in source order.
+- Every call whose callee is named `new` resets the prefix to the enclosing nest base — this is how `Routes::new()` and `Router::new()` behave as boundaries.
+
+This statement-level view is also the reason routes assembled across `let` bindings can go unseen: only expression statements are visited, so a router that is built in one binding and returned from another contributes only the calls that appear in expression position. Statement chains — one `router.route(...)` per statement — are the visible form.
+
+The recognized verbs are the HTTP set `get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `trace` and `connect`; a handler registered through an unrecognized verb falls back to the generic client method in the generated TypeScript.
+
+## Stage 4 — canonicalize paths
+
+Paths are normalized once, in `utils::path`, and every generator consumes the normalized form. Normalization collapses duplicate slashes, removes a trailing slash, guarantees a leading slash, and rewrites legacy parameter syntax to the Axum 0.8 form: `:name` becomes `{name}` and `*name` becomes `{*name}`. Degenerate segments — an empty parameter such as `{}` — are treated as literals rather than parameters, which keeps the generated code valid.
+
+## Stage 5 — enrich with handler metadata
+
+For every route, the scanner looks up the handler function in the same file and extracts what its signature and body reveal:
+
+- A parameter named `auth` of type `JWT` marks the route as authenticated.
+- Body extractors — `Json<T>`, `JsonValidate<T>`, `JsonValidateWithMessage<T>` — become the route's `bodyParam`.
+- A `Query<T>` extractor becomes `queryParams`.
+- The first `format::json(...)` conversion in the body becomes the return type: `Type::from(...)` and `Type(...)` keep the type name, and `Vec::<T>::new()` is reported as `Array<T>` with built-in Rust types marked as not importable.
+- Returned errors — expressions such as `Err(BadRequest::EmailAlreadyExists.into())` — are collected into per-route error sets, both as enum names and as full variant paths.
+
+The extraction walks the whole handler body with `syn`'s visitor infrastructure, so closures, `try` blocks and nested statements are covered by the same machinery rather than by hand-written recursion.
+
+<Aside type="note">
+  The scanner knows type *names*, not shapes. `foundType: "UserResponse"` means the generator can reference a `UserResponse` type in TypeScript — it cannot and does not describe that type's fields. The OpenAPI skeleton and the import-based TypeScript types are both honest about this limit.
+</Aside>
+
+## Deduplication and warnings
+
+After all files are scanned, two whole-corpus checks run. Duplicate `(method, path)` pairs are dropped — first occurrence wins, in the deterministic order above — and each drop emits a `cargo:warning`. Routes that share a path shape but use different parameter names produce a warning too, with positions compared independently so one mismatch does not hide another. A scan that ends with zero routes emits its own warning naming the folder it searched.
+
+## What the scanner deliberately does not know
+
+Three limits are by design rather than by omission. The scanner does not resolve handler module paths, which is why it generates no router builder — registering handlers would require guessing imports it refuses to guess. It does not know type shapes, which is why the OpenAPI document is a skeleton. And it does not execute anything, which is why only the recognized registration dialects are visible. Each of these limits traces back to the same decision: parse what is written, invent nothing.
+
+## Next steps
+
+<LinkCard
+  title="Troubleshoot scanning"
+  description="Fix the failure modes this pipeline can produce."
+  href="/guides/troubleshoot-scanning/"
+/>
+<LinkCard
+  title="Naming and collisions explained"
+  description="What happens to each scanned route's name."
+  href="/explanation/naming-and-collisions/"
+/>
