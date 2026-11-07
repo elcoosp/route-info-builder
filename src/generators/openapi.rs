@@ -3,16 +3,18 @@
 //! The document is a *skeleton*: request/response schemas reference type
 //! names collected from the handlers (`#/components/schemas/<Type>`), which
 //! is enough to feed tooling and to be filled in by hand afterwards.
+//! `operationId`s come from the resolved [`NamedRoute`] names, which keeps
+//! them unique and identical to the TypeScript client keys.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Value, json};
 
 use super::CodeGenerator;
-use crate::configuration::OpenApiConfig;
+use crate::configuration::{NamingConfig, OpenApiConfig};
 use crate::error::Result;
-use crate::generators::typescript::method_display_name;
 use crate::parser::RouteInfo;
+use crate::resolved::{NamedRoute, resolve_route_names};
 
 /// Generates a deterministic `OpenAPI` 3.1 document from the scanned routes.
 pub struct OpenApiGenerator;
@@ -21,23 +23,40 @@ impl CodeGenerator for OpenApiGenerator {
     type Config = OpenApiConfig;
     type Output = String;
 
+    /// Generates the document, resolving route names under the *default*
+    /// naming rules first (see the client generator for the rationale).
     fn generate(routes: &[RouteInfo], config: &Self::Config) -> Result<Self::Output> {
+        Self::generate_named(
+            &resolve_route_names(routes, &NamingConfig::default()),
+            config,
+        )
+    }
+}
+
+impl OpenApiGenerator {
+    /// Generates the document from pre-resolved route names.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`](crate::Error) when the document cannot be
+    /// serialized.
+    pub fn generate_named(named: &[NamedRoute<'_>], config: &OpenApiConfig) -> Result<String> {
         let mut paths: BTreeMap<String, BTreeMap<String, Value>> = BTreeMap::new();
         let mut schemas: BTreeSet<String> = BTreeSet::new();
 
-        for route in routes {
-            let operation = operation_value(route, &mut schemas);
+        for entry in named {
+            let operation = operation_value(entry, &mut schemas);
             paths
-                .entry(route.path.clone())
+                .entry(entry.route.path.clone())
                 .or_default()
-                .insert(route.method.to_lowercase(), operation);
+                .insert(entry.route.method.to_lowercase(), operation);
         }
 
-        for route in routes {
-            if let Some(body) = &route.handler_info.body_param {
+        for entry in named {
+            if let Some(body) = &entry.route.handler_info.body_param {
                 schemas.insert(body.clone());
             }
-            if let Some(query) = &route.handler_info.query_params {
+            if let Some(query) = &entry.route.handler_info.query_params {
                 schemas.insert(query.clone());
             }
         }
@@ -68,10 +87,11 @@ impl CodeGenerator for OpenApiGenerator {
     }
 }
 
-/// Builds the operation object for a single route.
-fn operation_value(route: &RouteInfo, schemas: &mut BTreeSet<String>) -> Value {
+/// Builds the operation object for a single resolved route.
+fn operation_value(entry: &NamedRoute<'_>, schemas: &mut BTreeSet<String>) -> Value {
+    let route = entry.route;
     let mut operation = serde_json::Map::new();
-    operation.insert("operationId".to_string(), json!(method_display_name(route)));
+    operation.insert("operationId".to_string(), json!(entry.ts_name));
 
     let mut parameters = Vec::new();
     for segment in route.path.split('/').filter(|segment| !segment.is_empty()) {
@@ -87,7 +107,7 @@ fn operation_value(route: &RouteInfo, schemas: &mut BTreeSet<String>) -> Value {
     if let Some(query) = &route.handler_info.query_params {
         schemas.insert(query.clone());
         parameters.push(json!({
-            "name": method_display_name(route),
+            "name": entry.ts_name,
             "in": "query",
             "required": false,
             "schema": { "$ref": format!("#/components/schemas/{query}") },
