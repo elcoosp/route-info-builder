@@ -1,15 +1,16 @@
 //! TypeScript HTTP client generator.
 //!
 //! One parameter-descriptor-driven code path replaces the sixteen
-//! near-identical branches of the original implementation.
+//! near-identical branches of the original implementation. Client keys come
+//! from the resolved [`NamedRoute`] names, never re-derived from the raw
+//! route, so they stay in parity with the generated Rust `name()` values.
 
 use super::super::CodeGenerator;
-use super::{
-    TypeImportManager, method_display_name, params_interface_name, path_template, ts_param_name,
-};
-use crate::configuration::TypeScriptConfig;
+use super::{TypeImportManager, path_template, ts_param_name};
+use crate::configuration::{NamingConfig, TypeScriptConfig};
 use crate::error::Result;
 use crate::parser::RouteInfo;
+use crate::resolved::{NamedRoute, resolve_route_names};
 use crate::ts::indent;
 use crate::utils::path;
 use std::collections::{BTreeMap, BTreeSet};
@@ -32,17 +33,47 @@ impl CodeGenerator for ClientGenerator {
     type Config = TypeScriptConfig;
     type Output = String;
 
+    /// Generates the client, resolving route names under the *default*
+    /// naming rules first.
+    ///
+    /// The TypeScript configuration does not embed the scan-time
+    /// [`NamingConfig`], so direct callers without the scan context get the
+    /// deterministic names the pipeline produces for the default setup.
+    /// Prefer [`ClientGenerator::generate_named`] with a list from
+    /// [`resolve_route_names`](crate::resolve_route_names) whenever the
+    /// naming configuration is customized.
     fn generate(routes: &[RouteInfo], config: &Self::Config) -> Result<Self::Output> {
+        Self::generate_named(
+            &resolve_route_names(routes, &NamingConfig::default()),
+            config,
+        )
+    }
+}
+
+impl ClientGenerator {
+    /// Generates the client from pre-resolved route names.
+    ///
+    /// Every emitted key equals [`NamedRoute::ts_name`], which is what keeps
+    /// the client object, the hooks file, the `OpenAPI` `operationId`s and the
+    /// Rust `name()` arms referring to the same identifiers even when the
+    /// naming configuration resolves collisions or adds prefix/suffix
+    /// decorations.
+    ///
+    /// # Errors
+    ///
+    /// Currently infallible; the [`Result`](crate::Result) keeps the
+    /// signature uniform with the other generators.
+    pub fn generate_named(named: &[NamedRoute<'_>], config: &TypeScriptConfig) -> Result<String> {
         let mut sections: Vec<String> = Vec::new();
 
-        sections.push(imports_section(routes, config));
-        let interfaces = interfaces_section(routes);
+        sections.push(imports_section(named, config));
+        let interfaces = interfaces_section(named);
         if !interfaces.is_empty() {
             sections.push(interfaces);
         }
         sections.push(runtime_section(config));
 
-        let methods = routes
+        let methods = named
             .iter()
             .map(client_method)
             .collect::<Vec<_>>()
@@ -57,7 +88,7 @@ impl CodeGenerator for ClientGenerator {
 }
 
 /// Import statements for the client file.
-fn imports_section(routes: &[RouteInfo], config: &TypeScriptConfig) -> String {
+fn imports_section(named: &[NamedRoute<'_>], config: &TypeScriptConfig) -> String {
     let mut lines = vec![
         "import { useQuery, useMutation, type UseQueryOptions, type UseMutationOptions } from \"@tanstack/react-query\";"
             .to_string(),
@@ -67,22 +98,22 @@ fn imports_section(routes: &[RouteInfo], config: &TypeScriptConfig) -> String {
         lines.push(format!("import {{ {token_key} }} from \"{import_from}\";"));
     }
     let mut manager = TypeImportManager::default();
-    manager.collect_from_routes(routes);
+    manager.collect_from_routes(named.iter().map(|entry| entry.route));
     lines.extend(manager.generate_imports(config.bindings_path()));
     lines.join("\n")
 }
 
 /// `...Params` interfaces deduplicated by name with sorted fields.
-fn interfaces_section(routes: &[RouteInfo]) -> String {
+fn interfaces_section(named: &[NamedRoute<'_>]) -> String {
     let mut interfaces: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for route in routes {
-        let params: Vec<String> = path::extract_parameters_from_path(&route.path);
+    for entry in named {
+        let params: Vec<String> = path::extract_parameters_from_path(&entry.route.path);
         if params.is_empty() {
             continue;
         }
         let fields = params.iter().map(|param| ts_param_name(param));
         interfaces
-            .entry(params_interface_name(route))
+            .entry(entry.params_interface())
             .or_default()
             .extend(fields);
     }
@@ -120,9 +151,10 @@ fn api_client_instance(config: &TypeScriptConfig) -> String {
     }
 }
 
-/// The client object entry for a single route.
-fn client_method(route: &RouteInfo) -> String {
-    let name = method_display_name(route);
+/// The client object entry for a single resolved route.
+fn client_method(entry: &NamedRoute<'_>) -> String {
+    let route = entry.route;
+    let name = entry.ts_name.as_str();
     let params: Vec<String> = path::extract_parameters_from_path(&route.path);
     let has_path_params = !params.is_empty();
     let query_type = route.handler_info.query_params.as_deref();
@@ -142,7 +174,7 @@ fn client_method(route: &RouteInfo) -> String {
 
     let mut arguments: Vec<String> = Vec::new();
     if has_path_params {
-        arguments.push(format!("params: {}", params_interface_name(route)));
+        arguments.push(format!("params: {}", entry.params_interface()));
     }
     if let Some(query_type) = query_type {
         arguments.push(format!("query: {query_type}"));
@@ -378,13 +410,14 @@ mod tests {
         ClientGenerator, api_client_instance, client_method, error_union, imports_section,
         interfaces_section,
     };
-    use crate::configuration::TypeScriptConfig;
+    use crate::configuration::{NamingConfig, TypeScriptConfig};
     use crate::error::Result;
     use crate::generators::CodeGenerator;
     use crate::parser::{HandlerInfo, RouteInfo, handlers::ReturnType};
+    use crate::resolved::resolve_route_names;
     use std::collections::BTreeSet;
 
-    use super::super::{params_interface_name, pascal};
+    use super::super::pascal;
 
     fn route(path: &str, method: &str, name: &str) -> RouteInfo {
         RouteInfo {
@@ -394,6 +427,11 @@ mod tests {
             handler: format!("{name}_handler"),
             handler_info: HandlerInfo::default(),
         }
+    }
+
+    /// Resolves the fixture route under the default naming rules.
+    fn named(routes: &[RouteInfo]) -> Vec<crate::resolved::NamedRoute<'_>> {
+        resolve_route_names(routes, &NamingConfig::default())
     }
 
     fn rich_route() -> RouteInfo {
@@ -489,7 +527,7 @@ mod tests {
             route("/users/{user_id}/x/{account_id}", "GET", "get_user"),
             route("/users/{user_id}/y", "GET", "get_user_alias"),
         ];
-        let interfaces = interfaces_section(&routes);
+        let interfaces = interfaces_section(&named(&routes));
         assert!(interfaces.starts_with("export interface GetUserAliasParams {"));
         assert!(interfaces.contains("export interface GetUserParams {"));
         assert!(interfaces.contains("accountId: string;"));
@@ -504,7 +542,7 @@ mod tests {
     #[test]
     fn imports_skip_auth_when_unconfigured() {
         let routes = vec![route("/x", "GET", "get_x")];
-        let imports = imports_section(&routes, &TypeScriptConfig::default());
+        let imports = imports_section(&named(&routes), &TypeScriptConfig::default());
         assert_eq!(imports.lines().count(), 1);
         assert!(imports.starts_with("import { useQuery"));
     }
@@ -536,7 +574,7 @@ mod tests {
     fn client_method_covers_query_and_mutation_bodies() {
         let mut query_route = route("/posts", "GET", "get_posts");
         query_route.handler_info.query_params = Some("PostQuery".to_string());
-        let generated = client_method(&query_route);
+        let generated = client_method(&named(std::slice::from_ref(&query_route))[0]);
         assert!(generated.contains("let url = `/posts`;"));
         assert!(generated.contains("const queryStr = new URLSearchParams("));
         assert!(generated.contains("url += `?${queryStr}`;"));
@@ -544,7 +582,7 @@ mod tests {
 
         let mut delete_route = route("/users/{user_id}", "DELETE", "delete_user");
         delete_route.handler_info.body_param = Some("DeletePayload".to_string());
-        let generated = client_method(&delete_route);
+        let generated = client_method(&named(std::slice::from_ref(&delete_route))[0]);
         assert!(generated.contains(
             "(params: DeleteUserParams, body: DeletePayload, config?: { signal?: AbortSignal })"
         ));
@@ -552,11 +590,30 @@ mod tests {
     }
 
     #[test]
-    fn params_interface_name_and_pascal_helper() {
+    fn params_interface_and_pascal_helpers() {
         assert_eq!(pascal("get_user"), "GetUser");
-        assert_eq!(
-            params_interface_name(&route("/u/{id}", "GET", "get_u")),
-            "GetUParams"
-        );
+        let routes = vec![route("/u/{id}", "GET", "get_u")];
+        let named = named(&routes);
+        assert_eq!(named[0].params_interface(), "GetUParams");
+    }
+
+    #[test]
+    fn colliding_routes_produce_unique_client_keys() {
+        // Resolved under `append-method`, the POST route surfaces as
+        // `postUsers`; both entries must coexist in one client object.
+        let routes = vec![
+            route("/users", "GET", "users"),
+            route("/users", "POST", "users"),
+        ];
+        let resolution = NamingConfig {
+            include_method_in_names: Some(false),
+            collision_strategy: Some(crate::configuration::CollisionStrategy::AppendMethod),
+            ..NamingConfig::default()
+        };
+        let named = resolve_route_names(&routes, &resolution);
+        let code = ClientGenerator::generate_named(&named, &TypeScriptConfig::default())
+            .expect("generate");
+        assert_eq!(code.matches("users: async").count(), 1);
+        assert!(code.contains("postUsers: async"));
     }
 }
