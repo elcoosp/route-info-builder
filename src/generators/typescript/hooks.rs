@@ -2,13 +2,15 @@
 //!
 //! Mirrors the client generator: a single parameter-descriptor-driven code
 //! path builds `useQuery` hooks for GET routes and `useMutation` hooks for
-//! everything else.
+//! everything else. Hook names come from the resolved [`NamedRoute`] entries
+//! so they collide no more often than the client keys they delegate to.
 
 use super::super::CodeGenerator;
-use super::{TypeImportManager, method_display_name, params_interface_name, pascal};
-use crate::configuration::TypeScriptConfig;
+use super::{TypeImportManager, pascal};
+use crate::configuration::{NamingConfig, TypeScriptConfig};
 use crate::error::Result;
 use crate::parser::RouteInfo;
+use crate::resolved::{NamedRoute, resolve_route_names};
 use std::collections::BTreeSet;
 
 /// Generates `useQuery`/`useMutation` hooks delegating to the client file.
@@ -18,11 +20,28 @@ impl CodeGenerator for HooksGenerator {
     type Config = TypeScriptConfig;
     type Output = String;
 
+    /// Generates the hooks, resolving route names under the *default* naming
+    /// rules first (see the client generator for the rationale).
     fn generate(routes: &[RouteInfo], config: &Self::Config) -> Result<Self::Output> {
-        let mut sections: Vec<String> = Vec::new();
-        sections.push(imports_section(routes, config));
+        Self::generate_named(
+            &resolve_route_names(routes, &NamingConfig::default()),
+            config,
+        )
+    }
+}
 
-        let hooks = routes
+impl HooksGenerator {
+    /// Generates the hooks from pre-resolved route names.
+    ///
+    /// # Errors
+    ///
+    /// Currently infallible; the [`Result`](crate::Result) keeps the
+    /// signature uniform with the other generators.
+    pub fn generate_named(named: &[NamedRoute<'_>], config: &TypeScriptConfig) -> Result<String> {
+        let mut sections: Vec<String> = Vec::new();
+        sections.push(imports_section(named, config));
+
+        let hooks = named
             .iter()
             .map(hook_function)
             .collect::<Vec<_>>()
@@ -34,7 +53,7 @@ impl CodeGenerator for HooksGenerator {
 }
 
 /// Import statements plus the convenience re-exports for the hooks file.
-fn imports_section(routes: &[RouteInfo], config: &TypeScriptConfig) -> String {
+fn imports_section(named: &[NamedRoute<'_>], config: &TypeScriptConfig) -> String {
     let mut lines = vec![
         "import { type ApiError, type BadRequestErrorDetails, isBadRequestError, client } from \"./client\";"
             .to_string(),
@@ -43,13 +62,13 @@ fn imports_section(routes: &[RouteInfo], config: &TypeScriptConfig) -> String {
     ];
 
     let mut manager = TypeImportManager::default();
-    manager.collect_from_routes(routes);
+    manager.collect_from_routes(named.iter().map(|entry| entry.route));
     lines.extend(manager.generate_imports(config.bindings_path()));
 
     let mut client_type_imports: BTreeSet<String> = BTreeSet::new();
-    for route in routes {
-        if !crate::utils::path::extract_parameters_from_path(&route.path).is_empty() {
-            client_type_imports.insert(format!("type {}", params_interface_name(route)));
+    for entry in named {
+        if !crate::utils::path::extract_parameters_from_path(&entry.route.path).is_empty() {
+            client_type_imports.insert(format!("type {}", entry.params_interface()));
         }
     }
     if !client_type_imports.is_empty() {
@@ -67,17 +86,18 @@ fn imports_section(routes: &[RouteInfo], config: &TypeScriptConfig) -> String {
     lines.join("\n")
 }
 
-/// The hook function for a single route.
-fn hook_function(route: &RouteInfo) -> String {
-    let hook_name = format!("use{}", pascal(&route.name));
-    let method_name = method_display_name(route);
+/// The hook function for a single resolved route.
+fn hook_function(entry: &NamedRoute<'_>) -> String {
+    let route = entry.route;
+    let hook_name = format!("use{}", pascal(&entry.ts_name));
+    let method_name = entry.ts_name.as_str();
     let return_type = route
         .handler_info
         .return_type
         .found_type
         .as_deref()
         .unwrap_or("any");
-    let params_type = params_interface_name(route);
+    let params_type = entry.params_interface();
     let query_type = route.handler_info.query_params.as_deref();
     let body_type = if route.method == "GET" {
         None
@@ -88,7 +108,7 @@ fn hook_function(route: &RouteInfo) -> String {
     if route.method == "GET" {
         query_hook(
             &hook_name,
-            &method_name,
+            method_name,
             return_type,
             has_path_params(route),
             &params_type,
@@ -97,7 +117,7 @@ fn hook_function(route: &RouteInfo) -> String {
     } else {
         mutation_hook(
             &hook_name,
-            &method_name,
+            method_name,
             return_type,
             has_path_params(route),
             &params_type,
@@ -211,10 +231,11 @@ fn mutation_hook(
 #[cfg(test)]
 mod tests {
     use super::{HooksGenerator, hook_function, imports_section, mutation_hook, query_hook};
-    use crate::configuration::TypeScriptConfig;
+    use crate::configuration::{NamingConfig, TypeScriptConfig};
     use crate::error::Result;
     use crate::generators::CodeGenerator;
     use crate::parser::{HandlerInfo, RouteInfo, handlers::ReturnType};
+    use crate::resolved::resolve_route_names;
     use std::collections::BTreeSet;
 
     fn route(path: &str, method: &str, name: &str) -> RouteInfo {
@@ -227,9 +248,17 @@ mod tests {
         }
     }
 
+    /// Resolves one fixture route under the default naming rules.
+    fn single(route_info: &RouteInfo) -> crate::resolved::NamedRoute<'_> {
+        resolve_route_names(std::slice::from_ref(route_info), &NamingConfig::default())
+            .into_iter()
+            .next()
+            .expect("one route resolves to one entry")
+    }
+
     #[test]
     fn get_hook_without_params() {
-        let hook = hook_function(&route("/health", "GET", "get_health"));
+        let hook = hook_function(&single(&route("/health", "GET", "get_health")));
         assert_eq!(
             hook,
             "export function useGetHealth(options?: Omit<UseQueryOptions<any, ApiError>, \"queryKey\">) {\n  return useQuery({\n    queryKey: [\"getHealth\"],\n    queryFn: ({ signal }) => client.getHealth({ signal }),\n    ...options,\n  });\n}"
@@ -240,7 +269,7 @@ mod tests {
     fn get_hook_with_params_and_query() {
         let mut rich = route("/users/{user_id}/feed", "GET", "get_user_feed");
         rich.handler_info.query_params = Some("FeedQuery".to_string());
-        let hook = hook_function(&rich);
+        let hook = hook_function(&single(&rich));
         assert!(hook.starts_with("export function useGetUserFeed(params: GetUserFeedParams, query: FeedQuery, options?: Omit<UseQueryOptions<any, ApiError>, \"queryKey\">) {"));
         assert!(hook.contains("queryKey: [\"getUserFeed\", params, query],"));
         assert!(
@@ -252,25 +281,25 @@ mod tests {
 
     #[test]
     fn mutation_hooks_cover_all_variable_shapes() {
-        let plain = hook_function(&route("/health", "POST", "post_health"));
+        let plain = hook_function(&single(&route("/health", "POST", "post_health")));
         assert!(plain.contains("UseMutationOptions<any, ApiError, void, unknown>"));
         assert!(plain.contains("mutationFn: () => client.postHealth(),"));
 
         let mut with_body = route("/users", "POST", "create_user");
         with_body.handler_info.body_param = Some("CreateUserRequest".to_string());
-        let hook = hook_function(&with_body);
+        let hook = hook_function(&single(&with_body));
         assert!(hook.contains("UseMutationOptions<any, ApiError, CreateUserRequest, unknown>"));
         assert!(hook.contains("mutationFn: (body: CreateUserRequest) => client.createUser(body),"));
 
         let mut with_query = route("/users", "POST", "post_user");
         with_query.handler_info.query_params = Some("UserQuery".to_string());
-        let hook = hook_function(&with_query);
+        let hook = hook_function(&single(&with_query));
         assert!(hook.contains("UseMutationOptions<any, ApiError, UserQuery, unknown>"));
         assert!(hook.contains("mutationFn: (query: UserQuery) => client.postUser(query),"));
 
         let mut with_params = route("/users/{user_id}", "PUT", "put_user");
         with_params.handler_info.body_param = Some("UpdateUserRequest".to_string());
-        let hook = hook_function(&with_params);
+        let hook = hook_function(&single(&with_params));
         assert!(hook.contains(
             "UseMutationOptions<any, ApiError, { params: PutUserParams, body: UpdateUserRequest }, unknown>"
         ));
@@ -281,7 +310,7 @@ mod tests {
         let mut with_all = route("/users/{user_id}/settings", "PATCH", "patch_user_settings");
         with_all.handler_info.query_params = Some("SettingsQuery".to_string());
         with_all.handler_info.body_param = Some("SettingsRequest".to_string());
-        let hook = hook_function(&with_all);
+        let hook = hook_function(&single(&with_all));
         assert!(hook.contains(
             "UseMutationOptions<any, ApiError, { params: PatchUserSettingsParams, query: SettingsQuery, body: SettingsRequest }, unknown>"
         ));
@@ -318,12 +347,37 @@ mod tests {
 
     #[test]
     fn imports_without_extra_types_stay_minimal() {
+        let health = route("/health", "GET", "get_health");
         let imports = imports_section(
-            &[route("/health", "GET", "get_health")],
+            &resolve_route_names(std::slice::from_ref(&health), &NamingConfig::default()),
             &TypeScriptConfig::default(),
         );
         assert!(!imports.contains("from \"./client\";\nimport { type"));
         assert_eq!(imports.lines().count(), 4);
+    }
+
+    #[test]
+    fn hook_names_follow_the_resolved_names_not_the_raw_route_name() {
+        // With the method excluded from the names, the POST route resolves
+        // through the append-method strategy to `postUsers`; the hook must
+        // use the resolved name, not the raw `users` route name.
+        let routes = vec![
+            route("/users", "GET", "users"),
+            route("/users", "POST", "users"),
+        ];
+        let resolution = NamingConfig {
+            include_method_in_names: Some(false),
+            collision_strategy: Some(crate::configuration::CollisionStrategy::AppendMethod),
+            ..NamingConfig::default()
+        };
+        let code = HooksGenerator::generate_named(
+            &resolve_route_names(&routes, &resolution),
+            &TypeScriptConfig::default(),
+        )
+        .expect("generate");
+        assert!(code.contains("export function useUsers("));
+        assert!(code.contains("export function usePostUsers("));
+        assert!(code.contains("mutationFn: () => client.postUsers(),"));
     }
 
     #[test]
