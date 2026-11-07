@@ -1,0 +1,57 @@
+---
+title: "Naming and collisions"
+description: "How a URL path becomes an enum variant name — the five stages, digit and keyword handling, and the trade-offs of each collision strategy."
+type: explanation
+---
+
+import { Aside, LinkCard } from '@astrojs/starlight/components';
+
+Every generated artifact hangs off one string: the route name. The Rust variant `GetApiUsersUserId`, the TypeScript method `getApiUsersUserId`, the TanStack Query key and the `name()` method on the enum are all views of that same string in different casings. Understanding how the string is derived — and what happens when two routes derive the same one — makes the naming keys predictable.
+
+## Stage 1 — strip the name prefix
+
+If `path_prefix_to_remove` is set, the prefix is removed from the path *for naming only*. The stripping is segment-aware: a configured prefix of `/user` does not corrupt the name of a `/users` route, because `/user` must match whole segments to be removed. The URL keeps its prefix in every case — the key exists so that a global `/api` mount does not pollute every variant name.
+
+## Stage 2 — clean the path
+
+The cleaned path is built by dropping parameter braces (`{user_id}` contributes `user_id`), turning separators into underscores, and collapsing runs of separators. The `/` divider and the characters `-`, `.` and `:` always act as separators; `word_separators` extends that set. A path that cleans to nothing — the root route — falls back to the base name `root`.
+
+## Stage 3 — prepend the method
+
+With `include_method_in_names` on (the default), the lower-cased HTTP method joins the base name with an underscore before any casing is applied: `get_api_users`. The method is part of the name by default precisely because two verbs on one path are common, and a name that ignores the method collides immediately at stage five.
+
+## Stage 4 — case and sanitize
+
+The joined name is converted to `variant_case` (default `pascal`) or, for parameter fields, `field_case` (default `snake`). Two refinements matter at the edges:
+
+- **Digits.** `convert_case` treats a digit as a word boundary, so `/api/v1/users` yields `v_1` in snake case. With `preserve_numbers = false`, digits stay glued to the preceding word — `v1` — at the cost of slightly less regular casing.
+- **Keywords.** A route named `/match` would produce a variant called `Match`, which is a Rust keyword. Rather than panicking, the generator emits raw identifiers (`r#match`), and degenerate parameter names fall back to literal treatment.
+
+## Stage 5 — resolve collisions
+
+Names are assigned through a bookkeeper that remembers every name already taken. Three strategies exist, and the difference between them is who absorbs the cost of a collision:
+
+- **`skip`** (the default) keeps the first route and drops each duplicate. The cost is silent: the route disappears from every artifact, leaving a `cargo:warning` as the only trace. It is the default because a dropped route is visible and diagnosable, while a mangled name hides in the output — but it is still lossy, which is why the strategy is configurable.
+- **`append-method`** prefixes the HTTP method to the duplicate, which resolves the most common collision class — same path, different verbs — without loss, at the cost of irregular names for the affected routes.
+- **`number`** appends a counter (`Users`, `Users2`, `Users3`), which never loses a route but produces names whose relationship to the URL is purely positional.
+
+<Aside type="note">
+  Collision resolution operates on variant names. A separate, earlier check drops duplicate `(method, path)` registrations — the same route declared twice is a scanning concern, not a naming one, and no strategy keeps both copies.
+</Aside>
+
+## Why the name is also the client key
+
+The TypeScript side derives its method names by camel-casing the same base name, and the hooks file uses the Pascal form with a `use` prefix. `name()` on the Rust enum returns the camel form as well. The parity is the point: a TanStack Query key built from `name()` on the Rust side matches the key the generated hook uses on the TypeScript side, which is what makes cache invalidation across languages possible. Renaming through the naming keys therefore renames both worlds together — there is no way to rename one side alone.
+
+## Next steps
+
+<LinkCard
+  title="Configure generated names"
+  description="Set the keys this pipeline consumes."
+  href="/guides/configure-naming/"
+/>
+<LinkCard
+  title="How scanning works"
+  description="Where the route record comes from before naming."
+  href="/explanation/scanning-pipeline/"
+/>
