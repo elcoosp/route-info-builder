@@ -1,0 +1,111 @@
+---
+title: "Generate artifacts from the CLI"
+description: "Install the route-info-builder binary and produce every artifact from the command line, with per-invocation output overrides."
+type: how-to
+---
+
+import { Aside, LinkCard } from '@astrojs/starlight/components';
+
+This guide shows you how to produce the Rust link enum, the TypeScript client and hooks, the OpenAPI skeleton and the JSON route map without a build script. Use it when you want one-off generation, CI pipelines, or output paths you can override per invocation.
+
+**Preconditions**
+
+- `cargo` is on your `PATH`.
+- A controllers folder exists (for example `src/controllers`) and every `*.rs` file in it parses as valid Rust.
+
+## Install the binary
+
+```bash
+cargo install route-info-builder
+```
+
+The binary is a default crate feature. Library consumers who never want it can build with `default-features = false` to drop `clap` from the dependency tree.
+
+## Scaffold a configuration file
+
+```bash
+route-info-builder init
+```
+
+You should now see a `route-info.toml` in the working directory containing the starter configuration. The command refuses to overwrite an existing file; pass `--force` when you mean to replace it:
+
+```bash
+route-info-builder init --force
+```
+
+`init` accepts one positional path (default `route-info.toml`). Edit the generated file so `controllers_path` points at your controllers folder — the starter value is `src/controllers`.
+
+## Generate every configured output
+
+```bash
+route-info-builder generate
+```
+
+You should see a summary like:
+
+```ansi
+Generated Rust link enum (2413 bytes).
+  rust:      src/generated/links.rs
+  typescript: frontend/src/api/client.ts
+              frontend/src/api/api.ts
+  openapi:   openapi.json
+  route map: routes.json
+```
+
+Only the outputs configured in your TOML file appear in the summary.
+
+## Override outputs per invocation
+
+Each `generate` flag overrides the matching configuration key for that run, without editing the TOML file:
+
+| Flag | Overrides | Notes |
+| :--- | :--- | :--- |
+| `-c, --config <path>` | configuration file used | Default lookup is `route-info.toml` in the working directory. |
+| `--controllers <dir>` | `controllers_path` | |
+| `--rust-output <file>` | `rust.output_file` | |
+| `--ts-dir <dir>` | `typescript.output_path` | Implies `generate_client = true` for this run. |
+| `--openapi <file>` | `openapi.output_path` | |
+| `--route-map <file>` | `route_map.output_path` | |
+
+For example, to generate the TypeScript client into a different checkout without touching the config:
+
+```bash
+route-info-builder generate --ts-dir ../other-frontend/src/api
+```
+
+## Inspect the scanned routes
+
+```bash
+route-info-builder scan
+```
+
+Prints the JSON route map to stdout — the same records `route_map.output_path` writes to disk. Pipe it into your tool of choice:
+
+```bash
+route-info-builder scan | jq '.[].path'
+```
+
+<Aside type="caution">
+  A scan fails when the controllers folder cannot be read or any controller file is not valid Rust. The error message names the file.
+</Aside>
+
+## Exit codes
+
+| Code | Meaning |
+| :--- | :--- |
+| `0` | Command succeeded, or `--help`/`--version` displayed. |
+| `1` | Runtime failure (unreadable paths, invalid TOML, invalid Rust, unwritable outputs). The CLI prints `error:` plus a `caused by:` chain. |
+| `2` | Usage error (unknown flag, missing subcommand). |
+
+## Next steps
+
+<LinkCard
+  title="CLI reference"
+  description="Every sub-command, flag and exit code in one table."
+  href="/reference/cli/"
+/>
+<LinkCard
+  title="Configuration reference"
+  description="What each key in route-info.toml controls."
+  href="/reference/configuration/"
+/>
