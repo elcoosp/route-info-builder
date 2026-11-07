@@ -1,0 +1,55 @@
+---
+title: "Design decisions"
+description: "The recorded decisions and trade-offs behind route-info-builder 0.2.0, including the alternatives the maintainers considered and rejected."
+type: explanation
+---
+
+import { Aside, LinkCard } from '@astrojs/starlight/components';
+
+The 0.1.0 → 0.2.0 rework left a written record: the maintainers documented every bug, performance change and rejected alternative in the repository's `docs/IMPROVEMENTS.md`. This page organizes that record into the decisions that shape how the tool behaves today. Everything below is sourced from that document and from the code it describes — where the record is silent, this page says so rather than attributing motives.
+
+## Zero heavy dependencies
+
+The dominant compile-time cost of 0.1.0 was a dependency chain, not the scanner: a path dependency on `ts_quote` broke the build for external consumers, and `deno_ast` pulled the swc tree into every build while the TS formatting it enabled was a no-op anyway. 0.2.0 dropped both and emits TypeScript as plain, fully tested string building, pre-formatted with no downstream formatter pass. The trade-off is explicit: the crate gave up convenient TS manipulation tooling in exchange for a build that compiles fast and works for any consumer of the published crate.
+
+## Determinism as a contract
+
+Generated code that changes between runs erodes trust in a build script, so 0.2.0 treats determinism as a property to engineer rather than observe: controller files are collected recursively and sorted, `read_dir` order no longer leaks into output, and every collection that reaches generated code is a `BTreeMap`/`BTreeSet`. The Rust side is pretty-printed once with `prettyplease`, so projects get formatted code without adding `cargo fmt` to their pipeline. The payoff shows up in diffs: regenerated files differ only when routes actually changed.
+
+## The OpenAPI document is a skeleton by design
+
+The scanner knows type names, not type shapes — that is a property of parsing signatures and bodies rather than type-checking them. Generating full JSON Schemas from names would have been fiction, and the maintainers recorded exactly that reasoning when they rejected Zod and serde-JSON-schema generation. The OpenAPI document instead references collected type names (`#/components/schemas/<Type>`) and documents the same limitation honestly: it is a skeleton meant to feed tooling and be filled in by hand, not a complete description of the API.
+
+## Typed errors with context
+
+0.1.0 surfaced failures as boxed errors that lost file and method context, which made build failures hard to localize. 0.2.0 introduced the typed `Error` enum carrying paths and source chains — every I/O failure names the file it failed on, and parse failures carry the `syn` error with line and column. This is a small decision with a large debugging payoff: the difference between "the build failed" and "this file, this line" is usually the difference between a quick fix and an archaeology session.
+
+## Considered and rejected
+
+The record preserves the alternatives, which is often the most useful part of a design document:
+
+- **`walkdir`** — the recursive directory walk is roughly twenty lines of standard-library code; a dependency was not worth it.
+- **Snapshot tests (`insta`)** — exact-string assertions keep the test surface explicit and avoid a snapshot-update workflow for a small crate.
+- **A generated `Router` builder** — registering handlers requires their module paths, which the scanner deliberately does not guess; generating a builder would have meant inventing those paths or producing code that does not compile.
+- **Watch mode** — out of scope for a build-script tool; `cargo watch` already covers the workflow.
+
+<Aside type="note">
+  These are the maintainers' own recorded reasons, not outside interpretation. Where a rationale is not in the record, the behavior is presented as an observation about the code, not as intent.
+</Aside>
+
+## What this means for you
+
+Two practical consequences follow from the decisions above. First, expect the generated artifacts to be complete and deterministic but shallow where types are concerned — the tool trades depth of type knowledge for zero-magic reliability, and the TypeScript types you get for request and response bodies are as good as the names your handlers reveal. Second, expect failures to be loud and located: between `deny_unknown_fields` configuration parsing, per-file parse errors with paths, and build-time warnings for duplicates and inconsistent parameters, the crate surfaces its limits at build time rather than at runtime.
+
+## Next steps
+
+<LinkCard
+  title="How scanning works"
+  description="The pipeline these decisions produced."
+  href="/explanation/scanning-pipeline/"
+/>
+<LinkCard
+  title="API reference"
+  description="The typed Error enum in detail."
+  href="/reference/api/"
+/>
