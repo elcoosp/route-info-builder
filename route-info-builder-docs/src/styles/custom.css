@@ -1,0 +1,36 @@
+/*
+ * Brand accent sampled from the project logo (docs/logo.png in the
+ * route-info-builder repository). The dominant saturated orange of the mark
+ * is #bb6d21 (hsl(30 70% 43%)). Light mode deepens the accent to
+ * hsl(30 70% 37%) so white text on accent surfaces passes WCAG AA (4.5:1)
+ * at any text size — same hue, see docs/decisions/0002-logo-format.md.
+ *
+ * Light mode uses a darker accent-high for text-level contrast against the
+ * light background; dark mode lightens the accent family. Measured ratios
+ * are recorded in docs/qa-report.md.
+ */
+
+:root {
+        --sl-color-accent-low: hsl(30 70% 95%);
+        --sl-color-accent: hsl(30 70% 37%);
+        --sl-color-accent-high: hsl(24 65% 28%);
+}
+
+[data-theme='dark'] {
+        --sl-color-accent-low: hsl(28 50% 14%);
+        --sl-color-accent: hsl(32 75% 58%);
+        --sl-color-accent-high: hsl(34 85% 78%);
+}
+
+/*
+ * The logo mark combines dark-gray links with orange ones on transparency.
+ * The dark-gray links disappear against Starlight's dark background. Rather
+ * than editing the original pixels, the mark gets a light backdrop in dark
+ * mode only, so one unchanged PNG serves both themes.
+ */
+[data-theme='dark'] .site-title img,
+[data-theme='dark'] .hero img {
+        background: hsl(33 40% 92%);
+        border-radius: 0.4rem;
+        padding: 0.2rem;
+}
