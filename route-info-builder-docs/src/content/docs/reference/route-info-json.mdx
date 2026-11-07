@@ -1,0 +1,84 @@
+---
+title: "Route map JSON reference"
+description: "The exact JSON shape of a scanned route record, as printed by scan and written by the route map."
+type: reference
+---
+
+import { Aside, LinkCard } from '@astrojs/starlight/components';
+
+This page describes the JSON route map: the serializable form of every scanned `RouteInfo`. The same records appear in two places — the stdout of `route-info-builder scan` and the file written when `route_map.output_path` is configured. Serialization is pretty-printed JSON with camelCase keys.
+
+## Record shape
+
+| Field | Type | Meaning |
+| :--- | :--- | :--- |
+| `name` | `string` | Base name generated from the normalized path and the HTTP method, before variant-collision resolution. |
+| `path` | `string` | Normalized URL path with `{param}` placeholders; legacy `:param` and `*wildcard` input is canonicalized. |
+| `method` | `string` | Upper-case HTTP method, for example `GET`. |
+| `handler` | `string` | Name of the handler function servicing the route. |
+| `handlerInfo` | `object` | Metadata extracted from the handler; see below. |
+
+## `handlerInfo`
+
+| Field | Type | Meaning |
+| :--- | :--- | :--- |
+| `bodyParam` | `string \| null` | Inner type of a `Json<T>`-style body extractor; `null` when the handler takes no JSON body. |
+| `queryParams` | `string \| null` | Inner type of a `Query<T>` extractor; `null` when absent. |
+| `requiresAuth` | `boolean` | The handler declares an `auth: JWT` extractor. |
+| `returnType` | `object` | Conversion and error information; see below. |
+
+## `handlerInfo.returnType`
+
+| Field | Type | Meaning |
+| :--- | :--- | :--- |
+| `foundType` | `string \| null` | Type detected in the first `json(...)` conversion; `Vec::<T>::new()` is reported as `Array<T>`. |
+| `isImportable` | `boolean` | Whether `foundType` is a user type worth importing (built-in types are not). |
+| `errorTypes` | `string[]` | Error enum names returned by the handler; sorted, de-duplicated. |
+| `errorVariants` | `string[]` | Full error variant paths returned by the handler; sorted, de-duplicated. |
+
+## Example record
+
+```json
+{
+  "name": "get_api_users_user_id",
+  "path": "/api/users/{user_id}",
+  "method": "GET",
+  "handler": "get_user",
+  "handlerInfo": {
+    "bodyParam": null,
+    "queryParams": null,
+    "requiresAuth": true,
+    "returnType": {
+      "foundType": "UserResponse",
+      "isImportable": true,
+      "errorTypes": ["BadRequest"],
+      "errorVariants": ["BadRequest::EmailAlreadyExists"]
+    }
+  }
+}
+```
+
+## Determinism
+
+The route map is stable across runs on the same source tree:
+
+- Controller files are visited in sorted order; `mod.rs`, dot-files and dot-directories are skipped.
+- Duplicate `(method, path)` records are dropped — the first occurrence in that order wins.
+- `errorTypes` and `errorVariants` are ordered sets, so their element order is sorted, not declaration order.
+
+<Aside type="caution">
+  `name` in the JSON is the base name before collision resolution. Two records can carry the same `name` while the generated enum disambiguates them according to `collision_strategy`.
+</Aside>
+
+## Next steps
+
+<LinkCard
+  title="API reference"
+  description="The Rust structs behind these records."
+  href="/reference/api/"
+/>
+<LinkCard
+  title="How scanning works"
+  description="How each field is extracted from your controllers."
+  href="/explanation/scanning-pipeline/"
+/>
