@@ -1,0 +1,26 @@
+{
+  "name": "route-info-builder-docs",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prebuild": "node scripts/build-llms-txt.mjs",
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro sync && tsc --noEmit",
+    "lint": "markdownlint-cli2 \"src/content/docs/**/*.{md,mdx}\"",
+    "qa": "node scripts/qa-screenshots.mjs"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.42.10",
+    "astro": "^7.4.7",
+    "starlight-links-validator": "^0.27.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.12",
+    "markdownlint-cli2": "^0.24.0",
+    "playwright": "^1.65.0",
+    "typescript": "6.0.3"
+  }
+}
