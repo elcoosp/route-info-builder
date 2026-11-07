@@ -1,0 +1,142 @@
+---
+title: "Configuration reference"
+description: "Every key of route-info.toml and the Config struct — type, default, required state and effect."
+type: reference
+---
+
+import { Aside, LinkCard } from '@astrojs/starlight/components';
+
+This page describes every configuration key accepted by `route-info.toml` and the equivalent `Config` struct. Missing fields fall back to their defaults; unknown keys are rejected with an `invalid configuration:` error, so typos surface immediately.
+
+A configuration can be loaded from a TOML file or built in code. `Config::load(None)` reads `route-info.toml` from the working directory when it exists and returns the defaults otherwise; `Config::load(Some(path))` reads the given file. Only `controllers_path` has no usable default — every other key is optional.
+
+## Top-level keys
+
+| Key | Type | Default | Effect |
+| :--- | :--- | :--- | :--- |
+| `controllers_path` | `string` (path) | — (effectively required) | Directory scanned recursively for controller files. |
+| `controllers_fn` | `string` | `"routes"` | Name of the function read inside each controller file. |
+| `naming` | table | see below | Naming rules for generated names. |
+| `rust` | table | see below | Rust `Link` enum options. |
+| `typescript` | table | see below | TypeScript client and hooks options. |
+| `openapi` | table | see below | OpenAPI 3.1 skeleton options. |
+| `route_map` | table | see below | JSON route map options. |
+
+## `[naming]`
+
+| Key | Type | Default | Effect |
+| :--- | :--- | :--- | :--- |
+| `include_method_in_names` | `bool` | `true` | Prepends the HTTP method to the generated base name. |
+| `path_prefix_to_remove` | `string` | — | Path prefix removed from generated names. Never affects URL paths. Segment-aware. |
+| `variant_case` | `string` | `"pascal"` | Case of enum variant names. |
+| `field_case` | `string` | `"snake"` | Case of route parameter fields. |
+| `word_separators` | `string` | — | Extra characters treated as word separators (`/`, `-`, `.`, `:` always are). |
+| `preserve_numbers` | `bool` | — | When `false`, digits stay glued to the preceding word (`v1`, not `v_1`). |
+| `variant_prefix` | `string` | `""` | Static prefix prepended to every variant name. |
+| `variant_suffix` | `string` | `""` | Static suffix appended to every variant name. |
+| `collision_strategy` | `string` | `"skip"` | What happens when two routes produce the same variant name. |
+
+`collision_strategy` accepts `skip`, `append-method` or `number` (kebab-case). `variant_case` and `field_case` accept `camel`, `pascal`, `snake`, `kebab`, `title`, `lower` and `upper` plus their `…Case` spellings; an unknown spelling falls back to the key's default.
+
+## `[rust]`
+
+| Key | Type | Default | Effect |
+| :--- | :--- | :--- | :--- |
+| `output_file` | `string` (path) | — | When set, the generated enum is written to this file; parent directories are created. |
+| `enum_name` | `string` | `"Link"` | Name of the generated enum. |
+| `derive_serde` | `bool` | `false` | Adds `serde::Serialize`/`serde::Deserialize` derives to the enum. |
+
+The generated enum always derives `Debug`, `Clone`, `PartialEq`, `Eq` and `Hash`, and implements `to_path()`, `method()` and `name()`.
+
+## `[typescript]`
+
+| Key | Type | Default | Effect |
+| :--- | :--- | :--- | :--- |
+| `generate_client` | `bool` | `false` | Generates the client and hooks files. |
+| `output_path` | `string` (dir) | — | Directory receiving the two files. Required for output. |
+| `client_file` | `string` | `"client.ts"` | File name of the generated client. |
+| `hooks_file` | `string` | `"api.ts"` | File name of the generated hooks. |
+| `bindings_path` | `string` | `"../../../bindings"` | Import base path for generated binding types. |
+| `auth` | table | — | Authentication plumbing; omit for an anonymous client. |
+
+Both files are written only when `generate_client` is enabled **and** `output_path` is set.
+
+### `[typescript.auth]`
+
+| Key | Type | Default | Effect |
+| :--- | :--- | :--- | :--- |
+| `token_key_import` | `string` | `"TOKEN_KEY"` | Name of the imported token key constant. |
+| `import_from` | `string` | — | Module the constant is imported from. Its presence switches the client from anonymous to authenticated. |
+
+## `[openapi]`
+
+| Key | Type | Default | Effect |
+| :--- | :--- | :--- | :--- |
+| `output_path` | `string` (path) | — | When set, an OpenAPI 3.1 skeleton is written to this file. |
+| `title` | `string` | `"API"` | API title used in the document. |
+| `version` | `string` | `"0.1.0"` | API version used in the document. |
+
+## `[route_map]`
+
+| Key | Type | Default | Effect |
+| :--- | :--- | :--- | :--- |
+| `output_path` | `string` (path) | — | When set, the JSON route map is written to this file. |
+
+## Full example
+
+```toml
+controllers_path = "src/controllers"
+controllers_fn   = "routes"
+
+[naming]
+include_method_in_names = true
+path_prefix_to_remove   = "/api"
+variant_case            = "pascal"
+field_case              = "snake"
+word_separators         = "-."
+preserve_numbers        = false
+variant_prefix          = ""
+variant_suffix          = ""
+collision_strategy      = "skip"
+
+[rust]
+output_file  = "src/generated/links.rs"
+enum_name    = "Link"
+derive_serde = false
+
+[typescript]
+generate_client = true
+output_path     = "frontend/src/api"
+client_file     = "client.ts"
+hooks_file      = "api.ts"
+bindings_path   = "../../../bindings"
+
+[typescript.auth]
+token_key_import = "TOKEN_KEY"
+import_from      = "@/hooks/use-auth"
+
+[openapi]
+output_path = "openapi.json"
+title       = "My API"
+version     = "0.1.0"
+
+[route_map]
+output_path = "routes.json"
+```
+
+<Aside type="caution">
+  Unknown keys anywhere in the file — top level or inside a table — are rejected: `invalid configuration: unknown field …`. The same applies to unknown `[naming]` keys and to a `collision_strategy` value outside the three accepted spellings.
+</Aside>
+
+## Next steps
+
+<LinkCard
+  title="Naming and collisions explained"
+  description="How the naming keys interact, stage by stage."
+  href="/explanation/naming-and-collisions/"
+/>
+<LinkCard
+  title="CLI reference"
+  description="The flags that override these keys per invocation."
+  href="/reference/cli/"
+/>
