@@ -1,0 +1,18 @@
+# Route Info Builder
+
+> Build-time route scanner for Axum-like frameworks: generates type-safe Rust link enums, TypeScript clients with TanStack Query hooks, OpenAPI 3.1 skeletons and JSON route maps.
+
+- [Design decisions](/explanation/design-decisions/): The recorded decisions and trade-offs behind route-info-builder 0.2.0, including the alternatives the maintainers considered and rejected.
+- [Naming and collisions](/explanation/naming-and-collisions/): How a URL path becomes an enum variant name — the five stages, digit and keyword handling, and the trade-offs of each collision strategy.
+- [How scanning works](/explanation/scanning-pipeline/): The pipeline that turns controller files into route records — file collection, statement walking, path canonicalization, handler metadata and warnings.
+- [Configure generated names](/guides/configure-naming/): Shape enum variant and parameter field names with NamingConfig, and choose a collision strategy when two routes produce the same name.
+- [Generate artifacts from the CLI](/guides/generate-from-cli/): Install the route-info-builder binary and produce every artifact from the command line, with per-invocation output overrides.
+- [Troubleshoot scanning](/guides/troubleshoot-scanning/): Fix the four documented failure modes — routes not found, dropped duplicates, inconsistent parameter warnings and Parse errors.
+- [Wire authentication into the generated client](/guides/wire-authentication/): Make the generated TypeScript client attach a bearer token to routes whose handler takes an auth: JWT extractor.
+- [Route Info Builder](/): Type-safe Rust links, TypeScript clients and OpenAPI skeletons generated from your existing Axum controllers.
+- [API reference](/reference/api/): The public Rust API — functions, configuration types, scanned-data types, generators and the Error enum.
+- [CLI reference](/reference/cli/): The route-info-builder binary — sub-commands, flags, default file lookup and exit codes.
+- [Configuration reference](/reference/configuration/): Every key of route-info.toml and the Config struct — type, default, required state and effect.
+- [Route map JSON reference](/reference/route-info-json/): The exact JSON shape of a scanned route record, as printed by scan and written by the route map.
+- [Getting started](/tutorials/getting-started/): Generate a type-safe Rust link enum and a typed TypeScript client with TanStack Query hooks from one Axum controller, then call your API from both sides.
+

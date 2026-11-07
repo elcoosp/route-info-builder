@@ -1,0 +1,1302 @@
+# Route Info Builder
+
+> Build-time route scanner for Axum-like frameworks: generates type-safe Rust link enums, TypeScript clients with TanStack Query hooks, OpenAPI 3.1 skeletons and JSON route maps.
+
+
+
+---
+
+# Design decisions
+
+Source: /explanation/design-decisions/
+
+The 0.1.0 → 0.2.0 rework left a written record: the maintainers documented every bug, performance change and rejected alternative in the repository's `docs/IMPROVEMENTS.md`. This page organizes that record into the decisions that shape how the tool behaves today. Everything below is sourced from that document and from the code it describes — where the record is silent, this page says so rather than attributing motives.
+
+## Zero heavy dependencies
+
+The dominant compile-time cost of 0.1.0 was a dependency chain, not the scanner: a path dependency on `ts_quote` broke the build for external consumers, and `deno_ast` pulled the swc tree into every build while the TS formatting it enabled was a no-op anyway. 0.2.0 dropped both and emits TypeScript as plain, fully tested string building, pre-formatted with no downstream formatter pass. The trade-off is explicit: the crate gave up convenient TS manipulation tooling in exchange for a build that compiles fast and works for any consumer of the published crate.
+
+## Determinism as a contract
+
+Generated code that changes between runs erodes trust in a build script, so 0.2.0 treats determinism as a property to engineer rather than observe: controller files are collected recursively and sorted, `read_dir` order no longer leaks into output, and every collection that reaches generated code is a `BTreeMap`/`BTreeSet`. The Rust side is pretty-printed once with `prettyplease`, so projects get formatted code without adding `cargo fmt` to their pipeline. The payoff shows up in diffs: regenerated files differ only when routes actually changed.
+
+## The OpenAPI document is a skeleton by design
+
+The scanner knows type names, not type shapes — that is a property of parsing signatures and bodies rather than type-checking them. Generating full JSON Schemas from names would have been fiction, and the maintainers recorded exactly that reasoning when they rejected Zod and serde-JSON-schema generation. The OpenAPI document instead references collected type names (`#/components/schemas/<Type>`) and documents the same limitation honestly: it is a skeleton meant to feed tooling and be filled in by hand, not a complete description of the API.
+
+## Typed errors with context
+
+0.1.0 surfaced failures as boxed errors that lost file and method context, which made build failures hard to localize. 0.2.0 introduced the typed `Error` enum carrying paths and source chains — every I/O failure names the file it failed on, and parse failures carry the `syn` error with line and column. This is a small decision with a large debugging payoff: the difference between "the build failed" and "this file, this line" is usually the difference between a quick fix and an archaeology session.
+
+## Considered and rejected
+
+The record preserves the alternatives, which is often the most useful part of a design document:
+
+- **`walkdir`** — the recursive directory walk is roughly twenty lines of standard-library code; a dependency was not worth it.
+- **Snapshot tests (`insta`)** — exact-string assertions keep the test surface explicit and avoid a snapshot-update workflow for a small crate.
+- **A generated `Router` builder** — registering handlers requires their module paths, which the scanner deliberately does not guess; generating a builder would have meant inventing those paths or producing code that does not compile.
+- **Watch mode** — out of scope for a build-script tool; `cargo watch` already covers the workflow.
+
+<Aside type="note">
+  These are the maintainers' own recorded reasons, not outside interpretation. Where a rationale is not in the record, the behavior is presented as an observation about the code, not as intent.
+</Aside>
+
+## What this means for you
+
+Two practical consequences follow from the decisions above. First, expect the generated artifacts to be complete and deterministic but shallow where types are concerned — the tool trades depth of type knowledge for zero-magic reliability, and the TypeScript types you get for request and response bodies are as good as the names your handlers reveal. Second, expect failures to be loud and located: between `deny_unknown_fields` configuration parsing, per-file parse errors with paths, and build-time warnings for duplicates and inconsistent parameters, the crate surfaces its limits at build time rather than at runtime.
+
+## Next steps
+
+<LinkCard
+  title="How scanning works"
+  description="The pipeline these decisions produced."
+  href="/explanation/scanning-pipeline/"
+/>
+<LinkCard
+  title="API reference"
+  description="The typed Error enum in detail."
+  href="/reference/api/"
+/>
+
+---
+
+# Naming and collisions
+
+Source: /explanation/naming-and-collisions/
+
+Every generated artifact hangs off one string: the route name. The Rust variant `GetApiUsersUserId`, the TypeScript method `getApiUsersUserId`, the TanStack Query key and the `name()` method on the enum are all views of that same string in different casings. Understanding how the string is derived — and what happens when two routes derive the same one — makes the naming keys predictable.
+
+## Stage 1 — strip the name prefix
+
+If `path_prefix_to_remove` is set, the prefix is removed from the path *for naming only*. The stripping is segment-aware: a configured prefix of `/user` does not corrupt the name of a `/users` route, because `/user` must match whole segments to be removed. The URL keeps its prefix in every case — the key exists so that a global `/api` mount does not pollute every variant name.
+
+## Stage 2 — clean the path
+
+The cleaned path is built by dropping parameter braces (`{user_id}` contributes `user_id`), turning separators into underscores, and collapsing runs of separators. The `/` divider and the characters `-`, `.` and `:` always act as separators; `word_separators` extends that set. A path that cleans to nothing — the root route — falls back to the base name `root`.
+
+## Stage 3 — prepend the method
+
+With `include_method_in_names` on (the default), the lower-cased HTTP method joins the base name with an underscore before any casing is applied: `get_api_users`. The method is part of the name by default precisely because two verbs on one path are common, and a name that ignores the method collides immediately at stage five.
+
+## Stage 4 — case and sanitize
+
+The joined name is converted to `variant_case` (default `pascal`) or, for parameter fields, `field_case` (default `snake`). Two refinements matter at the edges:
+
+- **Digits.** `convert_case` treats a digit as a word boundary, so `/api/v1/users` yields `v_1` in snake case. With `preserve_numbers = false`, digits stay glued to the preceding word — `v1` — at the cost of slightly less regular casing.
+- **Keywords.** A route named `/match` would produce a variant called `Match`, which is a Rust keyword. Rather than panicking, the generator emits raw identifiers (`r#match`), and degenerate parameter names fall back to literal treatment.
+
+## Stage 5 — resolve collisions
+
+Names are assigned through a bookkeeper that remembers every name already taken. Three strategies exist, and the difference between them is who absorbs the cost of a collision:
+
+- **`skip`** (the default) keeps the first route and drops each duplicate. The cost is silent: the route disappears from every artifact, leaving a `cargo:warning` as the only trace. It is the default because a dropped route is visible and diagnosable, while a mangled name hides in the output — but it is still lossy, which is why the strategy is configurable.
+- **`append-method`** prefixes the HTTP method to the duplicate, which resolves the most common collision class — same path, different verbs — without loss, at the cost of irregular names for the affected routes.
+- **`number`** appends a counter (`Users`, `Users2`, `Users3`), which never loses a route but produces names whose relationship to the URL is purely positional.
+
+<Aside type="note">
+  Collision resolution operates on variant names. A separate, earlier check drops duplicate `(method, path)` registrations — the same route declared twice is a scanning concern, not a naming one, and no strategy keeps both copies.
+</Aside>
+
+## Why the name is also the client key
+
+The TypeScript side derives its method names by camel-casing the same base name, and the hooks file uses the Pascal form with a `use` prefix. `name()` on the Rust enum returns the camel form as well. The parity is the point: a TanStack Query key built from `name()` on the Rust side matches the key the generated hook uses on the TypeScript side, which is what makes cache invalidation across languages possible. Renaming through the naming keys therefore renames both worlds together — there is no way to rename one side alone.
+
+## Next steps
+
+<LinkCard
+  title="Configure generated names"
+  description="Set the keys this pipeline consumes."
+  href="/guides/configure-naming/"
+/>
+<LinkCard
+  title="How scanning works"
+  description="Where the route record comes from before naming."
+  href="/explanation/scanning-pipeline/"
+/>
+
+---
+
+# How scanning works
+
+Source: /explanation/scanning-pipeline/
+
+The scanner is a build-time reader of Rust source, not a compiler plugin and not a running program. It parses controller files into abstract syntax trees, walks those trees for router-registration calls, and derives everything else — names, types, errors — from the same syntax. That position between compilation and analysis explains most of what follows: what it sees, what it deliberately ignores, and why certain shapes of code are invisible to it.
+
+## Stage 1 — collect files
+
+The scanner walks `controllers_path` recursively and collects `*.rs` files. Three rules shape the collection: `mod.rs` files are skipped, names starting with a dot are skipped, and the surviving files are visited in sorted order. The sorted order is what makes the whole pipeline deterministic — the same source tree produces byte-identical output on every machine.
+
+## Stage 2 — find the builder function
+
+Each collected file is parsed with `syn`, and the file's top-level items are searched for a function whose name matches `controllers_fn` (default `routes`). A file without such a function contributes nothing; the function is looked up by name only, so its visibility and signature do not matter to the scanner.
+
+## Stage 3 — walk the registration statements
+
+The scanner then walks the *statements of that function's body*, looking for method calls it recognizes. Two registration dialects are understood:
+
+- **Loco style** — `Routes::new()`, `.prefix("/api/users")`, `.add("/", get(list_users))`.
+- **Axum style** — `Router::new()`, `.route("/api/posts", get(list_posts))`, `.nest("/api/admin", ...)`, `.merge(other_routes())`.
+
+A handful of behaviors are worth knowing precisely, because they decide what is visible:
+
+- `prefix` sets the prefix that every later `add`/`route` in the chain joins.
+- `nest` stacks its path onto the current prefix while walking the inner router, then restores the previous prefix — nesting composes.
+- `merge` walks its argument, so routes from merged builders are inlined into the same list.
+- A method-router chain such as `get(one).post(two)` emits one route per verb, in source order.
+- Every call whose callee is named `new` resets the prefix to the enclosing nest base — this is how `Routes::new()` and `Router::new()` behave as boundaries.
+
+This statement-level view is also the reason routes assembled across `let` bindings can go unseen: only expression statements are visited, so a router that is built in one binding and returned from another contributes only the calls that appear in expression position. Statement chains — one `router.route(...)` per statement — are the visible form.
+
+The recognized verbs are the HTTP set `get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `trace` and `connect`; a handler registered through an unrecognized verb falls back to the generic client method in the generated TypeScript.
+
+## Stage 4 — canonicalize paths
+
+Paths are normalized once, in `utils::path`, and every generator consumes the normalized form. Normalization collapses duplicate slashes, removes a trailing slash, guarantees a leading slash, and rewrites legacy parameter syntax to the Axum 0.8 form: `:name` becomes `{name}` and `*name` becomes `{*name}`. Degenerate segments — an empty parameter such as `{}` — are treated as literals rather than parameters, which keeps the generated code valid.
+
+## Stage 5 — enrich with handler metadata
+
+For every route, the scanner looks up the handler function in the same file and extracts what its signature and body reveal:
+
+- A parameter named `auth` of type `JWT` marks the route as authenticated.
+- Body extractors — `Json<T>`, `JsonValidate<T>`, `JsonValidateWithMessage<T>` — become the route's `bodyParam`.
+- A `Query<T>` extractor becomes `queryParams`.
+- The first `format::json(...)` conversion in the body becomes the return type: `Type::from(...)` and `Type(...)` keep the type name, and `Vec::<T>::new()` is reported as `Array<T>` with built-in Rust types marked as not importable.
+- Returned errors — expressions such as `Err(BadRequest::EmailAlreadyExists.into())` — are collected into per-route error sets, both as enum names and as full variant paths.
+
+The extraction walks the whole handler body with `syn`'s visitor infrastructure, so closures, `try` blocks and nested statements are covered by the same machinery rather than by hand-written recursion.
+
+<Aside type="note">
+  The scanner knows type *names*, not shapes. `foundType: "UserResponse"` means the generator can reference a `UserResponse` type in TypeScript — it cannot and does not describe that type's fields. The OpenAPI skeleton and the import-based TypeScript types are both honest about this limit.
+</Aside>
+
+## Deduplication and warnings
+
+After all files are scanned, two whole-corpus checks run. Duplicate `(method, path)` pairs are dropped — first occurrence wins, in the deterministic order above — and each drop emits a `cargo:warning`. Routes that share a path shape but use different parameter names produce a warning too, with positions compared independently so one mismatch does not hide another. A scan that ends with zero routes emits its own warning naming the folder it searched.
+
+## What the scanner deliberately does not know
+
+Three limits are by design rather than by omission. The scanner does not resolve handler module paths, which is why it generates no router builder — registering handlers would require guessing imports it refuses to guess. It does not know type shapes, which is why the OpenAPI document is a skeleton. And it does not execute anything, which is why only the recognized registration dialects are visible. Each of these limits traces back to the same decision: parse what is written, invent nothing.
+
+## Next steps
+
+<LinkCard
+  title="Troubleshoot scanning"
+  description="Fix the failure modes this pipeline can produce."
+  href="/guides/troubleshoot-scanning/"
+/>
+<LinkCard
+  title="Naming and collisions explained"
+  description="What happens to each scanned route's name."
+  href="/explanation/naming-and-collisions/"
+/>
+
+---
+
+# Configure generated names
+
+Source: /guides/configure-naming/
+
+This guide shows you how to control the names the generator produces: which method appears in them, which path prefix disappears from them, how they are cased, and what happens when two routes would produce the same variant name. URL paths are never affected — every naming key changes names only.
+
+**Preconditions**
+
+- A working `route-info.toml` (or an in-code `Config`) with `controllers_path` set.
+- The names you want to change are visible in a generated `links.rs` or `client.ts`.
+
+## Shorten names by removing a path prefix
+
+```toml
+[naming]
+path_prefix_to_remove = "/api"
+```
+
+`GET /api/users` then produces the variant `GetUsers` while `to_path()` still returns `/api/users`. Prefix matching is segment-aware: removing `/user` does not touch a `/users` route.
+
+## Drop the HTTP method from names
+
+By default the method is part of every base name, which is why `GET /api/users` and `POST /api/users` become `GetApiUsers` and `PostApiUsers`. Remove it when your routes do not collide without it:
+
+```toml
+[naming]
+include_method_in_names = false
+```
+
+With collisions likely (one path, several verbs), prefer a [collision strategy](#resolve-name-collisions) over dropping the method.
+
+## Change the casing
+
+```toml
+[naming]
+variant_case = "pascal" # enum variants, default
+field_case   = "snake"  # parameter fields, default
+```
+
+Accepted spellings for both keys: `camel`/`camelCase`, `pascal`/`PascalCase`, `snake`/`snake_case`, `kebab`/`kebab-case`, `title`/`Title Case`, `lower`/`lowercase`, `upper`/`uppercase`. An unknown spelling falls back to the default for that key.
+
+`GET /api/users/{user_id}` with `field_case = "camel"` produces the field `userId` instead of `user_id` — the same spelling the TypeScript parameters interface uses.
+
+## Keep digits glued to words
+
+`convert_case` treats a digit as a word boundary by default, so `/api/v1/users` becomes `GetApiV_1Users` in pascal or `v_1` in snake case. Set the key to `false` to glue digits to the preceding word:
+
+```toml
+[naming]
+preserve_numbers = false # v1 not v_1
+```
+
+## Add prefixes, suffixes and extra separators
+
+```toml
+[naming]
+variant_prefix  = "Api"    # ApiGetUsers
+variant_suffix  = "Route"  # GetUsersRoute
+word_separators = "+~"     # extra characters treated as word separators
+```
+
+`/`, `-`, `.` and `:` always act as separators; `word_separators` adds further characters on top of that set.
+
+## Resolve name collisions
+
+Two routes can produce the same base name — for example `GET /users/deactivated` and a path parameter both mapping to `GetUsers`. Choose what the generator does:
+
+```toml
+[naming]
+collision_strategy = "skip" # skip | append-method | number
+```
+
+| Strategy | Behavior |
+| :--- | :--- |
+| `skip` (default) | Keep the first route, drop each duplicate, and emit a `cargo:warning` naming the skipped route. |
+| `append-method` | Prefix the HTTP method to the duplicate: `GetUsers` versus `PostUsers`. |
+| `number` | Append a counter to the duplicate: `Users`, `Users2`, `Users3`, ... |
+
+<Aside type="caution">
+  `skip` silently loses routes — the only trace is a build-time warning. Pick `append-method` or `number` when losing a route is unacceptable, or when your URLs differ only in a way the base name cannot express.
+</Aside>
+
+## Verify the result
+
+Rebuild or re-run `route-info-builder generate`, then search the generated Rust file for your variants:
+
+```bash
+rg "pub enum Link" -A 12 src/links.rs
+```
+
+<Aside type="note">
+  `name()` on every variant returns the camelCase form of the same name the TypeScript client uses as its method key. Renaming variants therefore renames the client methods and the TanStack Query keys with them.
+</Aside>
+
+## Next steps
+
+<LinkCard
+  title="Naming and collisions explained"
+  description="The five stages that turn a URL path into a variant name."
+  href="/explanation/naming-and-collisions/"
+/>
+<LinkCard
+  title="Configuration reference"
+  description="Types and defaults for every [naming] key."
+  href="/reference/configuration/"
+/>
+
+---
+
+# Generate artifacts from the CLI
+
+Source: /guides/generate-from-cli/
+
+This guide shows you how to produce the Rust link enum, the TypeScript client and hooks, the OpenAPI skeleton and the JSON route map without a build script. Use it when you want one-off generation, CI pipelines, or output paths you can override per invocation.
+
+**Preconditions**
+
+- `cargo` is on your `PATH`.
+- A controllers folder exists (for example `src/controllers`) and every `*.rs` file in it parses as valid Rust.
+
+## Install the binary
+
+```bash
+cargo install route-info-builder
+```
+
+The binary is a default crate feature. Library consumers who never want it can build with `default-features = false` to drop `clap` from the dependency tree.
+
+## Scaffold a configuration file
+
+```bash
+route-info-builder init
+```
+
+You should now see a `route-info.toml` in the working directory containing the starter configuration. The command refuses to overwrite an existing file; pass `--force` when you mean to replace it:
+
+```bash
+route-info-builder init --force
+```
+
+`init` accepts one positional path (default `route-info.toml`). Edit the generated file so `controllers_path` points at your controllers folder — the starter value is `src/controllers`.
+
+## Generate every configured output
+
+```bash
+route-info-builder generate
+```
+
+You should see a summary like:
+
+```ansi
+Generated Rust link enum (2413 bytes).
+  rust:      src/generated/links.rs
+  typescript: frontend/src/api/client.ts
+              frontend/src/api/api.ts
+  openapi:   openapi.json
+  route map: routes.json
+```
+
+Only the outputs configured in your TOML file appear in the summary.
+
+## Override outputs per invocation
+
+Each `generate` flag overrides the matching configuration key for that run, without editing the TOML file:
+
+| Flag | Overrides | Notes |
+| :--- | :--- | :--- |
+| `-c, --config <path>` | configuration file used | Default lookup is `route-info.toml` in the working directory. |
+| `--controllers <dir>` | `controllers_path` | |
+| `--rust-output <file>` | `rust.output_file` | |
+| `--ts-dir <dir>` | `typescript.output_path` | Implies `generate_client = true` for this run. |
+| `--openapi <file>` | `openapi.output_path` | |
+| `--route-map <file>` | `route_map.output_path` | |
+
+For example, to generate the TypeScript client into a different checkout without touching the config:
+
+```bash
+route-info-builder generate --ts-dir ../other-frontend/src/api
+```
+
+## Inspect the scanned routes
+
+```bash
+route-info-builder scan
+```
+
+Prints the JSON route map to stdout — the same records `route_map.output_path` writes to disk. Pipe it into your tool of choice:
+
+```bash
+route-info-builder scan | jq '.[].path'
+```
+
+<Aside type="caution">
+  A scan fails when the controllers folder cannot be read or any controller file is not valid Rust. The error message names the file.
+</Aside>
+
+## Exit codes
+
+| Code | Meaning |
+| :--- | :--- |
+| `0` | Command succeeded, or `--help`/`--version` displayed. |
+| `1` | Runtime failure (unreadable paths, invalid TOML, invalid Rust, unwritable outputs). The CLI prints `error:` plus a `caused by:` chain. |
+| `2` | Usage error (unknown flag, missing subcommand). |
+
+## Next steps
+
+<LinkCard
+  title="CLI reference"
+  description="Every sub-command, flag and exit code in one table."
+  href="/reference/cli/"
+/>
+<LinkCard
+  title="Configuration reference"
+  description="What each key in route-info.toml controls."
+  href="/reference/configuration/"
+/>
+
+---
+
+# Troubleshoot scanning
+
+Source: /guides/troubleshoot-scanning/
+
+This guide shows you how to diagnose and fix each failure mode the scanner documents. Work through the symptom that matches your build output.
+
+## Routes not found
+
+**Symptom:** `cargo:warning: route-info-builder: no routes found under src/controllers`, or some of your routes are missing from the output.
+
+Check the four rules the scanner applies when collecting routes:
+
+1. **Function name.** Only a function named `routes` is read. A controller whose builder function is called something else is invisible until you say so:
+
+    ```toml
+    controllers_fn = "api_routes"
+    ```
+
+2. **File name.** `mod.rs` files and dot-files are skipped; only `*.rs` files are considered (case-insensitive extension). Rename `mod.rs` content into a regular file such as `users.rs`.
+
+3. **Statement shape.** Registration calls must appear as expressions in the function body — one chained expression or one statement per call. Routes built across `let` bindings and only returned at the end are not seen. Rewrite as a statement chain:
+
+    ```rust
+    // Not seen: the router is assembled across let bindings.
+    let router = Router::new();
+    let router = router.route("/api/users", get(list_users));
+    router
+
+    // Seen: each registration is its own statement expression.
+    let router = Router::new();
+    router.route("/api/users", get(list_users))
+    ```
+
+4. **Path syntax.** Both `{param}` and legacy `:param` are understood and canonicalized, so a legacy route still appears — but under its canonical form (`/items/{item_id}`).
+
+## Routes disappear as duplicates
+
+**Symptom:** `cargo:warning` messages about dropped routes; a route you declared twice exists only once in the output.
+
+Duplicate `(method, path)` pairs are dropped by design — the first occurrence wins, in sorted-file, statement order. Remove the duplicate registration, or keep both by making the paths differ. Naming-level collisions (same variant name, different URLs) are a separate mechanism controlled by `collision_strategy`; see [Configure generated names](/guides/configure-naming/).
+
+## Inconsistent parameter names
+
+**Symptom:** a `cargo:warning` about inconsistent parameter names.
+
+Routes that share the same path shape but use different parameter names — `/items/{id}` in one controller and `/items/{item_id}` in another — produce this warning. Positions are compared independently, so the warning points at the mismatching position. Align the names; the generated field names follow the route's own segment, so mismatched names also yield inconsistent TypeScript parameters.
+
+## Build fails with a Parse error
+
+**Symptom:** `failed to parse controller file \`src/controllers/users.rs\`` followed by the syntax error.
+
+Every collected `*.rs` file is parsed as a full Rust AST — including files that contain no `routes` function. All controller files must compile as valid Rust in isolation. Move non-Rust content out of the controllers folder, or point `controllers_path` at a folder that contains only Rust controllers.
+
+<Aside type="caution">
+  A `Parse` error is fatal: nothing is generated until the file parses. The error message names the file; the `syn` source chain names the line and column.
+</Aside>
+
+## Next steps
+
+<LinkCard
+  title="How scanning works"
+  description="The full pipeline, from file collection to handler metadata."
+  href="/explanation/scanning-pipeline/"
+/>
+<LinkCard
+  title="API reference"
+  description="The Error enum and the scan functions behind these symptoms."
+  href="/reference/api/"
+/>
+
+---
+
+# Wire authentication into the generated client
+
+Source: /guides/wire-authentication/
+
+This guide shows you how to connect the generated client to your frontend's auth token, and how a route becomes authenticated in the first place. Without this configuration the client is anonymous: no auth import, no token lookup, no `Authorization` header.
+
+**Preconditions**
+
+- A frontend module that can resolve the token, exporting (or able to export) a constant holding the token key — the generated code reads the token from `localStorage` under that key.
+- Regenerated artifacts after each configuration change.
+
+## Configure the auth plumbing
+
+Add the `auth` table to `[typescript]` in `route-info.toml`:
+
+```toml
+[typescript.auth]
+token_key_import = "TOKEN_KEY"       # constant name, default TOKEN_KEY
+import_from      = "@/hooks/use-auth"
+```
+
+`import_from` is what switches the client from anonymous to authenticated: it names the module the constant is imported from. The generated `client.ts` then contains:
+
+```typescript
+
+export const apiClient = new ApiClient({
+  getToken: async () => {
+    return localStorage.getItem(TOKEN_KEY);
+  },
+});
+```
+
+Omit `[typescript.auth]` entirely to generate the anonymous client — for public APIs or when you wire the token elsewhere.
+
+## Flag authenticated routes in the handler
+
+The scanner marks a route as requiring authentication when its handler declares an extractor parameter named `auth` of type `JWT`:
+
+```rust
+async fn get_profile(auth: JWT) -> Response {
+  // ...
+}
+```
+
+The generated method for that route passes `requiresAuth: true` to the client. At request time the client awaits `getToken()` and sets the header when a token exists:
+
+```typescript
+if (options.requiresAuth && this.getToken) {
+  const token = await this.getToken();
+  if (token) {
+    headers.set("Authorization", "Bearer " + token);
+  }
+}
+```
+
+Routes whose handlers take no `auth: JWT` parameter pass `requiresAuth: false` — the client sends no `Authorization` header for them even when a token exists.
+
+## Verify the generated output
+
+Regenerate and check both sides:
+
+```bash
+route-info-builder generate
+rg "TOKEN_KEY|requiresAuth" frontend/src/api/client.ts
+```
+
+You should see the import, the `getToken` wiring, and `requiresAuth: true` on exactly the routes whose handlers take the extractor.
+
+<Aside type="caution">
+  The token is read from `localStorage` at call time. If your token lives in memory or in an httpOnly cookie, keep the client anonymous and wrap `client` methods, or post-process the generated file — the scanner does not emit custom getToken implementations.
+</Aside>
+
+<Aside type="note">
+  Rust-side handler analysis is per file: the extractor is detected by the parameter's name (`auth`) and its type (`JWT`), so the import path used for the `JWT` type in your controller does not matter.
+</Aside>
+
+## Next steps
+
+<LinkCard
+  title="Configuration reference"
+  description="Types and defaults for [typescript.auth] keys."
+  href="/reference/configuration/"
+/>
+<LinkCard
+  title="How scanning works"
+  description="How handler metadata, including auth, is extracted."
+  href="/explanation/scanning-pipeline/"
+/>
+
+---
+
+# API reference
+
+Source: /reference/api/
+
+This page describes the crate's public API as exported from the crate root (`route_info_builder::…`). The CLI is feature-gated and omitted here; see the [CLI reference](/reference/cli/).
+
+## Functions
+
+| Function | Signature | Effect |
+| :--- | :--- | :--- |
+| `generate_links` | `(&Config) -> Result<String>` | Scans once; returns the Rust enum code and writes every configured output. |
+| `scan_routes` | `(&Config) -> Result<Vec<RouteInfo>>` | Returns the scanned routes. |
+| `scan_controllers_folder` | `(&Config) -> Result<Vec<RouteInfo>>` | Alias of `scan_routes`, kept for backward compatibility. |
+| `generate_ts_client` | `(&Config) -> Result<String>` | Returns the TypeScript client code without writing files. |
+| `generate_ts_hooks` | `(&Config) -> Result<String>` | Returns the TanStack Query hooks code without writing files. |
+| `generate_openapi_json` | `(&Config) -> Result<String>` | Returns the OpenAPI 3.1 skeleton as a JSON string. |
+| `generate_route_map_json` | `(&Config) -> Result<String>` | Returns the JSON route map as a string. |
+
+### `generate_links` side effects
+
+| Condition | Output written |
+| :--- | :--- |
+| `rust.output_file` set | The enum code at that path. |
+| `typescript.generate_client` enabled **and** `typescript.output_path` set | `client_file` and `hooks_file` inside that directory. |
+| `openapi.output_path` set | The OpenAPI document at that path. |
+| `route_map.output_path` set | The JSON route map at that path. |
+
+Every write creates missing parent directories first. The returned `String` is the same Rust code written to `rust.output_file`.
+
+### Configuration loading
+
+| Function | Signature | Effect |
+| :--- | :--- | :--- |
+| `Config::from_toml_str` | `(&str) -> Result<Config>` | Parses TOML; rejects unknown keys. |
+| `Config::from_toml_file` | `(&Path) -> Result<Config>` | Reads and parses a file (`Error::ReadFile` on failure). |
+| `Config::load` | `(Option<&Path>) -> Result<Config>` | Explicit path, or `route-info.toml` in the working directory when it exists, or defaults. |
+
+## Types
+
+| Type | Kind | Purpose |
+| :--- | :--- | :--- |
+| `Config` | struct | Top-level configuration; `Default` + `Deserialize` with `deny_unknown_fields`. |
+| `NamingConfig` | struct | The `[naming]` keys. |
+| `RustConfig` | struct | The `[rust]` keys. |
+| `TypeScriptConfig` | struct | The `[typescript]` keys. |
+| `AuthConfig` | struct | The `[typescript.auth]` keys. |
+| `OpenApiConfig` | struct | The `[openapi]` keys. |
+| `RouteMapConfig` | struct | The `[route_map]` keys. |
+| `CollisionStrategy` | enum | `Skip`, `AppendMethod`, `Number` (TOML: `skip`, `append-method`, `number`). |
+| `RouteInfo` | struct | One scanned route with naming and handler metadata. |
+| `HandlerInfo` | struct | Body/query extractors, auth flag, return type of the handler. |
+| `ReturnType` | struct | Detected conversion type and error information. |
+| `Error` | enum | All failures of the scan and generation pipeline; `#[non_exhaustive]`. |
+| `Result` | alias | `std::result::Result<T, Error>`. |
+
+Each configuration struct implements `Default`; each optional key has an accessor with the resolved fallback (for example `RustConfig::enum_name()` → `"Link"`).
+
+### `RouteInfo`, `HandlerInfo`, `ReturnType`
+
+| Field | Type | Meaning |
+| :--- | :--- | :--- |
+| `RouteInfo::name` | `String` | Base name generated from path and method. |
+| `RouteInfo::path` | `String` | Normalized URL path with `{param}` placeholders. |
+| `RouteInfo::method` | `String` | Upper-case HTTP method. |
+| `RouteInfo::handler` | `String` | Handler function name. |
+| `RouteInfo::handler_info` | `HandlerInfo` | Extra information from the handler. |
+| `HandlerInfo::body_param` | `Option<String>` | Inner type of a `Json<T>`-style body extractor. |
+| `HandlerInfo::query_params` | `Option<String>` | Inner type of a `Query<T>` extractor. |
+| `HandlerInfo::requires_auth` | `bool` | The handler takes an `auth: JWT` extractor. |
+| `HandlerInfo::return_type` | `ReturnType` | Conversion and error information. |
+| `ReturnType::found_type` | `Option<String>` | Type detected in the first `json(...)` conversion. |
+| `ReturnType::is_importable` | `bool` | Whether `found_type` is a user type worth importing. |
+| `ReturnType::error_types` | `BTreeSet<String>` | Error enum names returned by the handler. |
+| `ReturnType::error_variants` | `BTreeSet<String>` | Full error variant paths returned by the handler. |
+
+All three structs serialize with camelCase keys; see the [route map JSON reference](/reference/route-info-json/).
+
+## Generators
+
+Every generator implements the `CodeGenerator` trait:
+
+```rust
+pub trait CodeGenerator {
+  type Config;
+  type Output;
+  fn generate(routes: &[RouteInfo], config: &Self::Config) -> Result<Self::Output>;
+}
+```
+
+| Generator | Config | Output |
+| :--- | :--- | :--- |
+| `RustLinksGenerator` | `&Config` | `String` |
+| `TypeScriptClientGenerator` | `&TypeScriptConfig` | `String` |
+| `TypeScriptHooksGenerator` | `&TypeScriptConfig` | `String` |
+| `OpenApiGenerator` | `&OpenApiConfig` | `String` |
+
+Generators only return code; they never write files. Writing is `generate_links`'s job.
+
+## Errors
+
+`Error` is `#[non_exhaustive]` and derives `thiserror::Error`; every I/O variant carries the offending path and the underlying `#[source]`.
+
+| Variant | Message pattern | Source |
+| :--- | :--- | :--- |
+| `ReadDir` | `failed to read controllers directory \`{path}\`` | `std::io::Error` |
+| `ReadFile` | `failed to read controller file \`{path}\`` | `std::io::Error` |
+| `CreateDir` | `failed to create output directory \`{path}\`` | `std::io::Error` |
+| `WriteFile` | `failed to write output file \`{path}\`` | `std::io::Error` |
+| `Parse` | `failed to parse controller file \`{path}\`` | `syn::Error` |
+| `Config` | `invalid configuration: {0}` | `toml::de::Error` |
+| `Json` | `failed to serialize generated data: {0}` | `serde_json::Error` |
+
+<Aside type="caution">
+  Because `Error` is `#[non_exhaustive]`, match with a wildcard arm; new variants can appear in minor releases.
+</Aside>
+
+## Next steps
+
+<LinkCard
+  title="Configuration reference"
+  description="Every key the Config family accepts."
+  href="/reference/configuration/"
+/>
+<LinkCard
+  title="Route map JSON reference"
+  description="The serialized shape of RouteInfo."
+  href="/reference/route-info-json/"
+/>
+
+---
+
+# CLI reference
+
+Source: /reference/cli/
+
+This page describes the `route-info-builder` command-line interface. The binary ships as the crate's default `cli` feature; building the crate with `default-features = false` omits it. `--version` reports the crate version (`propagate_version` is enabled).
+
+## Commands
+
+| Command | Purpose |
+| :--- | :--- |
+| `route-info-builder generate [flags]` | Generate the Rust link enum and every configured output. |
+| `route-info-builder scan [flags]` | Print the scanned route map as JSON to stdout. |
+| `route-info-builder init [path] [--force]` | Write a starter `route-info.toml`. |
+
+`generate` and `scan` accept the same flags.
+
+## Flags of `generate` and `scan`
+
+| Flag | Type | Overrides |
+| :--- | :--- | :--- |
+| `-c, --config <path>` | path | Configuration file used instead of the default lookup. |
+| `--controllers <dir>` | path | `controllers_path`. |
+| `--rust-output <file>` | path | `rust.output_file`. |
+| `--ts-dir <dir>` | path | `typescript.output_path`; implies `generate_client = true` for this run. |
+| `--openapi <file>` | path | `openapi.output_path`. |
+| `--route-map <file>` | path | `route_map.output_path`. |
+
+Overrides apply for the current invocation only; the TOML file is not modified.
+
+## `generate`
+
+Loads the configuration, applies flag overrides, scans the controllers and writes every configured output, creating parent directories. Prints a summary listing each written artifact:
+
+```ansi
+Generated Rust link enum (2413 bytes).
+  rust:      src/generated/links.rs
+  typescript: frontend/src/api/client.ts
+              frontend/src/api/api.ts
+  openapi:   openapi.json
+  route map: routes.json
+```
+
+Lines appear only for outputs that are configured (or overridden).
+
+## `scan`
+
+Loads the configuration, applies flag overrides, scans the controllers and prints the JSON route map — pretty-printed, one record per route — to stdout. Nothing is written to disk.
+
+## `init`
+
+| Argument / flag | Type | Default | Effect |
+| :--- | :--- | :--- | :--- |
+| `path` | positional | `route-info.toml` | Where the starter configuration is written. |
+| `--force` | flag | — | Overwrite an existing file. |
+
+Without `--force`, `init` refuses to overwrite an existing file with `refusing to overwrite <path> (pass --force to overwrite)` and exits `1`. The starter content matches the default configuration file name and covers `controllers_path`, `[rust]`, `[typescript]`, `[openapi]` and `[route_map]`.
+
+## Default configuration lookup
+
+With no `--config` flag, both `generate` and `scan` use `route-info.toml` in the working directory when it exists and fall back to built-in defaults otherwise. An explicit `--config` path that does not exist is an error.
+
+## Exit codes
+
+| Code | Meaning |
+| :--- | :--- |
+| `0` | Success, including `--help` and `--version`. |
+| `1` | Runtime failure: unreadable paths, invalid TOML, invalid Rust, unwritable outputs. The CLI prints `error:` followed by a `caused by:` chain. |
+| `2` | Usage error: unknown flag, missing subcommand, unparsable arguments. |
+
+<Aside type="caution">
+  Exit code `2` is reserved for argument-parsing failures. Scripts that distinguish "wrong invocation" from "generation failed" should match on that code.
+</Aside>
+
+## Next steps
+
+<LinkCard
+  title="Configuration reference"
+  description="What each overridden key controls."
+  href="/reference/configuration/"
+/>
+<LinkCard
+  title="Route map JSON"
+  description="The exact records `scan` prints."
+  href="/reference/route-info-json/"
+/>
+
+---
+
+# Configuration reference
+
+Source: /reference/configuration/
+
+This page describes every configuration key accepted by `route-info.toml` and the equivalent `Config` struct. Missing fields fall back to their defaults; unknown keys are rejected with an `invalid configuration:` error, so typos surface immediately.
+
+A configuration can be loaded from a TOML file or built in code. `Config::load(None)` reads `route-info.toml` from the working directory when it exists and returns the defaults otherwise; `Config::load(Some(path))` reads the given file. Only `controllers_path` has no usable default — every other key is optional.
+
+## Top-level keys
+
+| Key | Type | Default | Effect |
+| :--- | :--- | :--- | :--- |
+| `controllers_path` | `string` (path) | — (effectively required) | Directory scanned recursively for controller files. |
+| `controllers_fn` | `string` | `"routes"` | Name of the function read inside each controller file. |
+| `naming` | table | see below | Naming rules for generated names. |
+| `rust` | table | see below | Rust `Link` enum options. |
+| `typescript` | table | see below | TypeScript client and hooks options. |
+| `openapi` | table | see below | OpenAPI 3.1 skeleton options. |
+| `route_map` | table | see below | JSON route map options. |
+
+## `[naming]`
+
+| Key | Type | Default | Effect |
+| :--- | :--- | :--- | :--- |
+| `include_method_in_names` | `bool` | `true` | Prepends the HTTP method to the generated base name. |
+| `path_prefix_to_remove` | `string` | — | Path prefix removed from generated names. Never affects URL paths. Segment-aware. |
+| `variant_case` | `string` | `"pascal"` | Case of enum variant names. |
+| `field_case` | `string` | `"snake"` | Case of route parameter fields. |
+| `word_separators` | `string` | — | Extra characters treated as word separators (`/`, `-`, `.`, `:` always are). |
+| `preserve_numbers` | `bool` | — | When `false`, digits stay glued to the preceding word (`v1`, not `v_1`). |
+| `variant_prefix` | `string` | `""` | Static prefix prepended to every variant name. |
+| `variant_suffix` | `string` | `""` | Static suffix appended to every variant name. |
+| `collision_strategy` | `string` | `"skip"` | What happens when two routes produce the same variant name. |
+
+`collision_strategy` accepts `skip`, `append-method` or `number` (kebab-case). `variant_case` and `field_case` accept `camel`, `pascal`, `snake`, `kebab`, `title`, `lower` and `upper` plus their `…Case` spellings; an unknown spelling falls back to the key's default.
+
+## `[rust]`
+
+| Key | Type | Default | Effect |
+| :--- | :--- | :--- | :--- |
+| `output_file` | `string` (path) | — | When set, the generated enum is written to this file; parent directories are created. |
+| `enum_name` | `string` | `"Link"` | Name of the generated enum. |
+| `derive_serde` | `bool` | `false` | Adds `serde::Serialize`/`serde::Deserialize` derives to the enum. |
+
+The generated enum always derives `Debug`, `Clone`, `PartialEq`, `Eq` and `Hash`, and implements `to_path()`, `method()` and `name()`.
+
+## `[typescript]`
+
+| Key | Type | Default | Effect |
+| :--- | :--- | :--- | :--- |
+| `generate_client` | `bool` | `false` | Generates the client and hooks files. |
+| `output_path` | `string` (dir) | — | Directory receiving the two files. Required for output. |
+| `client_file` | `string` | `"client.ts"` | File name of the generated client. |
+| `hooks_file` | `string` | `"api.ts"` | File name of the generated hooks. |
+| `bindings_path` | `string` | `"../../../bindings"` | Import base path for generated binding types. |
+| `auth` | table | — | Authentication plumbing; omit for an anonymous client. |
+
+Both files are written only when `generate_client` is enabled **and** `output_path` is set.
+
+### `[typescript.auth]`
+
+| Key | Type | Default | Effect |
+| :--- | :--- | :--- | :--- |
+| `token_key_import` | `string` | `"TOKEN_KEY"` | Name of the imported token key constant. |
+| `import_from` | `string` | — | Module the constant is imported from. Its presence switches the client from anonymous to authenticated. |
+
+## `[openapi]`
+
+| Key | Type | Default | Effect |
+| :--- | :--- | :--- | :--- |
+| `output_path` | `string` (path) | — | When set, an OpenAPI 3.1 skeleton is written to this file. |
+| `title` | `string` | `"API"` | API title used in the document. |
+| `version` | `string` | `"0.1.0"` | API version used in the document. |
+
+## `[route_map]`
+
+| Key | Type | Default | Effect |
+| :--- | :--- | :--- | :--- |
+| `output_path` | `string` (path) | — | When set, the JSON route map is written to this file. |
+
+## Full example
+
+```toml
+controllers_path = "src/controllers"
+controllers_fn   = "routes"
+
+[naming]
+include_method_in_names = true
+path_prefix_to_remove   = "/api"
+variant_case            = "pascal"
+field_case              = "snake"
+word_separators         = "-."
+preserve_numbers        = false
+variant_prefix          = ""
+variant_suffix          = ""
+collision_strategy      = "skip"
+
+[rust]
+output_file  = "src/generated/links.rs"
+enum_name    = "Link"
+derive_serde = false
+
+[typescript]
+generate_client = true
+output_path     = "frontend/src/api"
+client_file     = "client.ts"
+hooks_file      = "api.ts"
+bindings_path   = "../../../bindings"
+
+[typescript.auth]
+token_key_import = "TOKEN_KEY"
+import_from      = "@/hooks/use-auth"
+
+[openapi]
+output_path = "openapi.json"
+title       = "My API"
+version     = "0.1.0"
+
+[route_map]
+output_path = "routes.json"
+```
+
+<Aside type="caution">
+  Unknown keys anywhere in the file — top level or inside a table — are rejected: `invalid configuration: unknown field …`. The same applies to unknown `[naming]` keys and to a `collision_strategy` value outside the three accepted spellings.
+</Aside>
+
+## Next steps
+
+<LinkCard
+  title="Naming and collisions explained"
+  description="How the naming keys interact, stage by stage."
+  href="/explanation/naming-and-collisions/"
+/>
+<LinkCard
+  title="CLI reference"
+  description="The flags that override these keys per invocation."
+  href="/reference/cli/"
+/>
+
+---
+
+# Route map JSON reference
+
+Source: /reference/route-info-json/
+
+This page describes the JSON route map: the serializable form of every scanned `RouteInfo`. The same records appear in two places — the stdout of `route-info-builder scan` and the file written when `route_map.output_path` is configured. Serialization is pretty-printed JSON with camelCase keys.
+
+## Record shape
+
+| Field | Type | Meaning |
+| :--- | :--- | :--- |
+| `name` | `string` | Base name generated from the normalized path and the HTTP method, before variant-collision resolution. |
+| `path` | `string` | Normalized URL path with `{param}` placeholders; legacy `:param` and `*wildcard` input is canonicalized. |
+| `method` | `string` | Upper-case HTTP method, for example `GET`. |
+| `handler` | `string` | Name of the handler function servicing the route. |
+| `handlerInfo` | `object` | Metadata extracted from the handler; see below. |
+
+## `handlerInfo`
+
+| Field | Type | Meaning |
+| :--- | :--- | :--- |
+| `bodyParam` | `string \| null` | Inner type of a `Json<T>`-style body extractor; `null` when the handler takes no JSON body. |
+| `queryParams` | `string \| null` | Inner type of a `Query<T>` extractor; `null` when absent. |
+| `requiresAuth` | `boolean` | The handler declares an `auth: JWT` extractor. |
+| `returnType` | `object` | Conversion and error information; see below. |
+
+## `handlerInfo.returnType`
+
+| Field | Type | Meaning |
+| :--- | :--- | :--- |
+| `foundType` | `string \| null` | Type detected in the first `json(...)` conversion; `Vec::<T>::new()` is reported as `Array<T>`. |
+| `isImportable` | `boolean` | Whether `foundType` is a user type worth importing (built-in types are not). |
+| `errorTypes` | `string[]` | Error enum names returned by the handler; sorted, de-duplicated. |
+| `errorVariants` | `string[]` | Full error variant paths returned by the handler; sorted, de-duplicated. |
+
+## Example record
+
+```json
+{
+  "name": "get_api_users_user_id",
+  "path": "/api/users/{user_id}",
+  "method": "GET",
+  "handler": "get_user",
+  "handlerInfo": {
+    "bodyParam": null,
+    "queryParams": null,
+    "requiresAuth": true,
+    "returnType": {
+      "foundType": "UserResponse",
+      "isImportable": true,
+      "errorTypes": ["BadRequest"],
+      "errorVariants": ["BadRequest::EmailAlreadyExists"]
+    }
+  }
+}
+```
+
+## Determinism
+
+The route map is stable across runs on the same source tree:
+
+- Controller files are visited in sorted order; `mod.rs`, dot-files and dot-directories are skipped.
+- Duplicate `(method, path)` records are dropped — the first occurrence in that order wins.
+- `errorTypes` and `errorVariants` are ordered sets, so their element order is sorted, not declaration order.
+
+<Aside type="caution">
+  `name` in the JSON is the base name before collision resolution. Two records can carry the same `name` while the generated enum disambiguates them according to `collision_strategy`.
+</Aside>
+
+## Next steps
+
+<LinkCard
+  title="API reference"
+  description="The Rust structs behind these records."
+  href="/reference/api/"
+/>
+<LinkCard
+  title="How scanning works"
+  description="How each field is extracted from your controllers."
+  href="/explanation/scanning-pipeline/"
+/>
+
+---
+
+# Getting started
+
+Source: /tutorials/getting-started/
+
+This tutorial takes you from an empty Rust project to generated routing artifacts and two working calls: one through the Rust `Link` enum, one through a TanStack Query hook in React. It uses the build-script integration, which regenerates the artifacts every time you compile.
+
+**Prerequisites**
+
+- Rust 1.88 or newer (the crate's MSRV).
+- Node.js 22+ and pnpm 10 for the frontend half of this tutorial.
+- No prior route-info-builder knowledge. The environment starts clean.
+
+<Steps>
+
+1. **Create the Axum project and one controller file.**
+
+    ```bash
+    cargo new shop-api
+    cd shop-api
+    mkdir -p src/controllers
+    ```
+
+    Add the runtime dependencies to `Cargo.toml`:
+
+    ```toml
+    [dependencies]
+    axum = "0.8"
+    tokio = { version = "1", features = ["full"] }
+
+    [build-dependencies]
+    route-info-builder = "0.2"
+    ```
+
+    Create the controller `src/controllers/users.rs`. The scanner looks for a function named `routes` inside every `*.rs` file under your controllers folder:
+
+    ```rust
+    use axum::routing::{get, post};
+    use axum::Router;
+
+    pub fn routes() -> Router {
+    Router::new()
+      .route("/api/users", get(list_users))
+      .route("/api/users", post(create_user))
+      .route("/api/users/{user_id}", get(get_user))
+    }
+
+    async fn list_users() -> &'static str {
+    "[]"
+    }
+
+    async fn create_user() -> &'static str {
+    "created"
+    }
+
+    async fn get_user() -> &'static str {
+    "user"
+    }
+    ```
+
+    Your project now looks like this:
+
+    <FileTree>
+    - shop-api
+        - src
+            - controllers
+                - users.rs
+            - main.rs
+        - Cargo.toml
+    </FileTree>
+
+2. **Write the build script.**
+
+    Create `build.rs` in the project root. Every field below is a real configuration key; `Config` implements `Default`, so you only set what you need:
+
+    ```rust
+    use route_info_builder::{Config, RustConfig, TypeScriptConfig};
+
+    fn main() {
+    let config = Config {
+      controllers_path: "src/controllers".into(),
+      rust: RustConfig {
+        output_file: Some("src/links.rs".into()),
+        ..RustConfig::default()
+      },
+      typescript: TypeScriptConfig {
+        generate_client: Some(true),
+        output_path: Some("../web/src/api".into()),
+        ..TypeScriptConfig::default()
+      },
+      ..Config::default()
+    };
+
+    route_info_builder::generate_links(&config).expect("failed to generate route links");
+    }
+    ```
+
+    This one call scans once, returns the generated Rust code, and writes every configured output to disk, creating parent directories as needed.
+
+3. **Generate the artifacts.**
+
+    ```bash
+    cargo build
+    ```
+
+    You should now see the generated files, and Cargo prints the scanner's build-time note about the TypeScript client:
+
+    ```ansi
+    ​warning: route-info-builder: generated TypeScript client at ../web/src/api
+    ```
+
+    Your tree now contains three generated files:
+
+    <FileTree>
+    - shop-api
+        - src
+            - controllers
+                - users.rs
+            - links.rs
+            - main.rs
+        - build.rs
+        - Cargo.toml
+    </FileTree>
+
+    Open `src/links.rs`. You should see one enum with one variant per route — the method is part of the name by default, and path parameters become fields:
+
+    ```rust
+    pub enum Link {
+    GetApiUsers,
+    PostApiUsers,
+    GetApiUsersUserId { user_id: String },
+    }
+    ```
+
+    Open `../web/src/api` (it does not exist yet, the build script creates it): you should find `client.ts`, a self-contained HTTP client with typed methods, and `api.ts`, the TanStack Query hooks.
+
+4. **Use the `Link` enum in Rust.**
+
+    Declare the generated module in `src/main.rs` and try the three methods every variant carries:
+
+    ```rust
+    mod links;
+
+    use links::Link;
+
+    #[tokio::main]
+    async fn main() {
+    let user_link = Link::GetApiUsersUserId { user_id: "123".to_string() };
+
+    println!("Path: {}", user_link.to_path()); // /api/users/123
+    println!("Method: {}", user_link.method()); // GET
+    println!("Name: {}", user_link.name()); // getApiUsersUserId
+    }
+    ```
+
+    Run it:
+
+    ```bash
+    cargo run
+    ```
+
+    ```ansi
+    Path: /api/users/123
+    Method: GET
+    Name: getApiUsersUserId
+    ```
+
+    `name()` returns the same key the TypeScript client uses, which keeps query keys in sync across both languages.
+
+5. **Create the frontend and install TanStack Query.**
+
+    In a second terminal, still inside `shop-api`, scaffold a React app into `web/`:
+
+    <Tabs>
+    <TabItem label="pnpm">
+      ```bash
+      pnpm create vite@latest web --template react-ts
+      cd web
+      pnpm install
+      pnpm add @tanstack/react-query
+      ```
+    </TabItem>
+    <TabItem label="npm">
+      ```bash
+      npm create vite@latest web -- --template react-ts
+      cd web
+      npm install
+      npm install @tanstack/react-query
+      ```
+    </TabItem>
+    <TabItem label="yarn">
+      ```bash
+      yarn create vite@latest web --template react-ts
+      cd web
+      yarn install
+      yarn add @tanstack/react-query
+      ```
+    </TabItem>
+    </Tabs>
+
+6. **Call the API with the generated hooks.**
+
+    The generated `api.ts` exposes one hook per route: `useQuery` hooks for GET routes and `useMutation` hooks for everything else. Replace the contents of `web/src/main.tsx`:
+
+    ```tsx
+    import { StrictMode } from "react";
+    import { createRoot } from "react-dom/client";
+    import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+    import App from "./App";
+    import "./index.css";
+
+    const queryClient = new QueryClient();
+
+    createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </StrictMode>,
+    );
+    ```
+
+    Replace `web/src/App.tsx`:
+
+    ```tsx
+    import { useGetApiUsers, useGetApiUsersUserId } from "./api/api";
+
+    export default function App() {
+    const { data: users, isLoading } = useGetApiUsers();
+    const { data: user } = useGetApiUsersUserId({ userId: "1" });
+
+    if (isLoading) return <p>Loading...</p>;
+
+    return (
+      <main>
+        <h1>Users</h1>
+        <pre>{JSON.stringify(users)}</pre>
+        <pre>{JSON.stringify(user)}</pre>
+      </main>
+    );
+    }
+    ```
+
+    The second hook takes a typed parameter object — the generator emitted a `GetApiUsersUserIdParams` interface with a `userId: string` field from the `{user_id}` path segment.
+
+    Build the frontend to confirm everything type-checks:
+
+    ```bash
+    pnpm build
+    ```
+
+    You should see Vite finish without type errors. The generated hooks compile inside your app with no additional wiring: the client module is self-contained and handles headers, JSON parsing, 204 responses and error transformation itself.
+
+    <Aside type="note">
+    The hooks show `any` return types here because the stub handlers return plain strings. The scanner also reads handler bodies: `format::json(...)` conversions, `Query<T>` extractors, `Json<T>`-style bodies and returned error variants all become TypeScript types. See [How scanning works](/explanation/scanning-pipeline/).
+    </Aside>
+
+7. **Regenerate after changing routes.**
+
+    Add a route to `users.rs`, or a new controller file, then run `cargo build` again. The scan is deterministic — files are visited in sorted order — so the output only changes when your routes change.
+
+</Steps>
+
+<Aside type="tip">
+  If `cargo build` reports that no routes were found, check that your files are not named `mod.rs`, that the function is named `routes`, and that routes built in local variables are registered through statement chains. The [troubleshooting guide](/guides/troubleshoot-scanning/) covers every known failure mode.
+</Aside>
+
+## Next steps
+
+<LinkCard
+  title="Generate artifacts from the CLI"
+  description="Skip the build script and drive generation from the command line."
+  href="/guides/generate-from-cli/"
+/>
+<LinkCard
+  title="Configure generated names"
+  description="Shape variant and field names, and resolve collisions."
+  href="/guides/configure-naming/"
+/>
+<LinkCard
+  title="How scanning works"
+  description="Understand the pipeline from file collection to handler metadata."
+  href="/explanation/scanning-pipeline/"
+/>
