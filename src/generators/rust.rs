@@ -3,16 +3,16 @@
 //! The generated source is pretty-printed with `prettyplease` so it can be
 //! written straight into a project without a formatter pass.
 
-use proc_macro2::{Ident, Span, TokenStream};
-use quote::quote;
-use std::fmt::Write as _;
-
 use super::CodeGenerator;
-use crate::configuration::naming::{VariantNamer, field_name, variant_base_name};
+use crate::configuration::naming::field_name;
 use crate::configuration::{Config, NamingConfig};
 use crate::error::Result;
 use crate::parser::RouteInfo;
-use crate::utils::{build_warning, case, path};
+use crate::resolved::{NamedRoute, resolve_route_names};
+use crate::utils::{case, path};
+use proc_macro2::{Ident, Span, TokenStream};
+use quote::quote;
+use std::fmt::Write as _;
 
 /// Generates the typed link enum for all scanned routes.
 pub struct LinksGenerator;
@@ -21,30 +21,41 @@ impl CodeGenerator for LinksGenerator {
     type Config = Config;
     type Output = String;
 
+    /// Generates the enum, resolving route names with this configuration's
+    /// naming rules first.
     fn generate(routes: &[RouteInfo], config: &Self::Config) -> Result<Self::Output> {
+        Self::generate_named(&resolve_route_names(routes, &config.naming), config)
+    }
+}
+
+impl LinksGenerator {
+    /// Generates the enum from pre-resolved route names.
+    ///
+    /// The [`NamedRoute`] entries come from
+    /// [`resolve_route_names`](crate::resolve_route_names), which is also
+    /// what keeps the `name()` arms below in parity with the generated
+    /// TypeScript client keys.
+    ///
+    /// # Errors
+    ///
+    /// Currently infallible; the [`Result`](crate::Result) keeps the
+    /// signature uniform with the other generators.
+    pub fn generate_named(named: &[NamedRoute<'_>], config: &Config) -> Result<String> {
         let enum_ident = ident_from(&case::to_valid_ident(config.rust.enum_name()));
-        let mut namer = VariantNamer::new(config.naming.collision_strategy());
 
         let mut variant_defs: Vec<TokenStream> = Vec::new();
         let mut path_arms: Vec<TokenStream> = Vec::new();
         let mut method_arms: Vec<TokenStream> = Vec::new();
         let mut name_arms: Vec<TokenStream> = Vec::new();
 
-        for route in routes {
-            let base = variant_base_name(&route.name, &config.naming);
-            let Some(variant) = namer.assign(&base, &route.method) else {
-                build_warning(&format!(
-                    "route-info-builder: duplicate variant name `{base}` skipped for route {} {}",
-                    route.method, route.path
-                ));
-                continue;
-            };
-            let decorated = ident_from(&case::to_valid_ident(&variant));
+        for entry in named {
+            let route = entry.route;
+            let decorated = ident_from(&case::to_valid_ident(&entry.variant));
             let fields = path_fields(&route.path, &config.naming);
 
             let path_str = route.path.as_str();
             let method_str = route.method.as_str();
-            let ts_name = case::convert_to_case(&variant, "camel");
+            let ts_name = entry.ts_name.as_str();
 
             if fields.is_empty() {
                 variant_defs.push(quote! { #decorated });
