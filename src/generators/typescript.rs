@@ -1,5 +1,9 @@
 //! TypeScript code generation: typed client, `TanStack` Query hooks and the
 //! shared type-import bookkeeping.
+//!
+//! Both artifacts consume pre-resolved [`NamedRoute`](crate::NamedRoute)s so
+//! the client keys and hook names match the generated Rust `name()` values
+//! exactly.
 
 pub(crate) mod client;
 pub(crate) mod hooks;
@@ -7,28 +11,12 @@ pub(crate) mod imports;
 
 use std::fmt::Write as _;
 
-use crate::parser::RouteInfo;
 use crate::utils::case;
 
 pub(crate) use imports::TypeImportManager;
 
 pub use client::ClientGenerator;
 pub use hooks::HooksGenerator;
-
-/// camelCase method name used both in the client object and as hook query key.
-#[must_use]
-pub(crate) fn method_display_name(route: &RouteInfo) -> String {
-    case::convert_to_case(&route.name, "camel")
-}
-
-/// Name of the generated `...Params` interface for a route.
-#[must_use]
-pub(crate) fn params_interface_name(route: &RouteInfo) -> String {
-    format!(
-        "{}Params",
-        case::convert_to_case(&method_display_name(route), "pascal")
-    )
-}
 
 /// Converts a Rust-side parameter name to its camelCase TS property name.
 #[must_use]
@@ -63,27 +51,7 @@ pub(crate) fn pascal(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{method_display_name, params_interface_name, pascal, path_template};
-    use crate::parser::{HandlerInfo, RouteInfo};
-
-    fn route(name: &str, path: &str) -> RouteInfo {
-        RouteInfo {
-            name: name.to_string(),
-            path: path.to_string(),
-            method: "GET".to_string(),
-            handler: "handler".to_string(),
-            handler_info: HandlerInfo::default(),
-        }
-    }
-
-    #[test]
-    fn display_names_are_camel_cased() {
-        assert_eq!(method_display_name(&route("get_user", "/u")), "getUser");
-        assert_eq!(
-            params_interface_name(&route("get_user", "/u")),
-            "GetUserParams"
-        );
-    }
+    use super::{pascal, path_template, ts_param_name};
 
     #[test]
     fn path_template_handles_params_and_root() {
@@ -99,5 +67,6 @@ mod tests {
     #[test]
     fn case_helpers() {
         assert_eq!(pascal("get_user"), "GetUser");
+        assert_eq!(ts_param_name("user_id"), "userId");
     }
 }
