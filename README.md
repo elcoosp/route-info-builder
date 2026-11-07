@@ -37,6 +37,10 @@ enums and API clients. Eliminate hardcoded URLs and manual client boilerplate.
 - **OpenAPI 3.1 skeleton** and a **JSON route map** for tooling.
 - **Typed errors** (`thiserror`) and `cargo:warning` diagnostics for
   duplicate routes and inconsistent parameter names.
+- **One name-resolution pass**: variant names, TypeScript client keys, hook
+  names and OpenAPI `operationId`s all come from a single collision-resolved
+  naming stage, so every artifact agrees even when the naming configuration
+  collapses distinct routes onto one base name.
 - **CLI binary**: generate artifacts without a build script, or scaffold a
   configuration file.
 
@@ -209,6 +213,7 @@ output_path = "routes.json"
 | :--- | :--- |
 | `generate_links(&Config)` | Scan once; return the Rust enum and write every configured output. |
 | `scan_routes(&Config)` / `scan_controllers_folder(&Config)` | Return the scanned `Vec<RouteInfo>`. |
+| `resolve_route_names(&[RouteInfo], &NamingConfig)` | Apply the naming rules and collision strategy once; returns `Vec<NamedRoute>` consumed by every generator. |
 | `generate_ts_client(&Config)` / `generate_ts_hooks(&Config)` | Single TypeScript artifacts. |
 | `generate_openapi_json(&Config)` | OpenAPI 3.1 skeleton as a JSON string. |
 | `generate_route_map_json(&Config)` | JSON route map as a string. |
@@ -216,7 +221,10 @@ output_path = "routes.json"
 
 Generators implement `CodeGenerator` and can be driven directly:
 `RustLinksGenerator`, `TypeScriptClientGenerator`, `TypeScriptHooksGenerator`
-and `OpenApiGenerator`.
+and `OpenApiGenerator`. Each also offers `generate_named(&[NamedRoute], …)`
+for pre-resolved names from `resolve_route_names` — the path `generate_links`
+itself uses, which keeps the Rust `name()` values, the TypeScript client keys
+and the OpenAPI `operationId`s in parity.
 
 ## Generated output examples
 
