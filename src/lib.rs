@@ -83,6 +83,7 @@ mod configuration;
 mod error;
 mod generators;
 mod parser;
+mod resolved;
 mod ts;
 mod utils;
 
@@ -100,6 +101,7 @@ pub use generators::typescript::{
     ClientGenerator as TypeScriptClientGenerator, HooksGenerator as TypeScriptHooksGenerator,
 };
 pub use parser::{HandlerInfo, ReturnType, RouteInfo, scan_controllers_folder, scan_routes};
+pub use resolved::{NamedRoute, resolve_route_names};
 
 /// Scans the controllers and generates the Rust link enum.
 ///
@@ -116,7 +118,12 @@ pub use parser::{HandlerInfo, ReturnType, RouteInfo, scan_controllers_folder, sc
 /// file cannot be written.
 pub fn generate_links(config: &Config) -> Result<String> {
     let routes = scan_routes(config)?;
-    let rust_code = RustLinksGenerator::generate(&routes, config)?;
+    // Every artifact consumes the same resolved names, which keeps the Rust
+    // `name()` values, the TypeScript client keys and the OpenAPI
+    // `operationId`s in parity even when the naming configuration collapses
+    // distinct routes onto one base name.
+    let named = resolve_route_names(&routes, &config.naming);
+    let rust_code = RustLinksGenerator::generate_named(&named, config)?;
 
     if let Some(output_file) = &config.rust.output_file {
         write_output(output_file, &rust_code)?;
@@ -125,8 +132,8 @@ pub fn generate_links(config: &Config) -> Result<String> {
     if config.typescript.generate_client()
         && let Some(output_dir) = &config.typescript.output_path
     {
-        let client = TypeScriptClientGenerator::generate(&routes, &config.typescript)?;
-        let hooks = TypeScriptHooksGenerator::generate(&routes, &config.typescript)?;
+        let client = TypeScriptClientGenerator::generate_named(&named, &config.typescript)?;
+        let hooks = TypeScriptHooksGenerator::generate_named(&named, &config.typescript)?;
         let client_path = output_dir.join(config.typescript_client_file());
         let hooks_path = output_dir.join(config.typescript_hooks_file());
         write_output(&client_path, &client)?;
@@ -138,7 +145,7 @@ pub fn generate_links(config: &Config) -> Result<String> {
     }
 
     if let Some(openapi_path) = &config.openapi.output_path {
-        let document = OpenApiGenerator::generate(&routes, &config.openapi)?;
+        let document = OpenApiGenerator::generate_named(&named, &config.openapi)?;
         write_output(openapi_path, &document)?;
     }
 
@@ -157,7 +164,8 @@ pub fn generate_links(config: &Config) -> Result<String> {
 /// Returns an [`Error`] when controllers cannot be scanned.
 pub fn generate_ts_client(config: &Config) -> Result<String> {
     let routes = scan_routes(config)?;
-    TypeScriptClientGenerator::generate(&routes, &config.typescript)
+    let named = resolve_route_names(&routes, &config.naming);
+    TypeScriptClientGenerator::generate_named(&named, &config.typescript)
 }
 
 /// Scans the controllers and returns only the `TanStack` Query hooks code.
@@ -167,7 +175,8 @@ pub fn generate_ts_client(config: &Config) -> Result<String> {
 /// Returns an [`Error`] when controllers cannot be scanned.
 pub fn generate_ts_hooks(config: &Config) -> Result<String> {
     let routes = scan_routes(config)?;
-    TypeScriptHooksGenerator::generate(&routes, &config.typescript)
+    let named = resolve_route_names(&routes, &config.naming);
+    TypeScriptHooksGenerator::generate_named(&named, &config.typescript)
 }
 
 /// Scans the controllers and returns an `OpenAPI` 3.1 skeleton as JSON.
@@ -178,7 +187,8 @@ pub fn generate_ts_hooks(config: &Config) -> Result<String> {
 /// cannot be serialized.
 pub fn generate_openapi_json(config: &Config) -> Result<String> {
     let routes = scan_routes(config)?;
-    OpenApiGenerator::generate(&routes, &config.openapi)
+    let named = resolve_route_names(&routes, &config.naming);
+    OpenApiGenerator::generate_named(&named, &config.openapi)
 }
 
 /// Scans the controllers and returns the JSON route map.
