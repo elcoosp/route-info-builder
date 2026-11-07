@@ -14,7 +14,10 @@ pub(crate) struct TypeImportManager {
 
 impl TypeImportManager {
     /// Collects body, return and error types from all routes.
-    pub(crate) fn collect_from_routes(&mut self, routes: &[RouteInfo]) {
+    pub(crate) fn collect_from_routes<'a, I>(&mut self, routes: I)
+    where
+        I: IntoIterator<Item = &'a RouteInfo>,
+    {
         for route in routes {
             if let Some(body_type) = &route.handler_info.body_param {
                 self.collect_type(body_type);
