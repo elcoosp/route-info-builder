@@ -1,0 +1,14 @@
+{
+	"config": {
+		"MD013": false,
+		"MD033": false,
+		"MD036": false,
+		"MD041": false,
+		"MD026": false,
+		"MD024": { "siblings_only": true },
+		"MD007": { "indent": 2 },
+		"MD012": { "maximum": 1 },
+		"MD035": { "style": "---" }
+	},
+	"ignores": ["node_modules/**", "dist/**", ".astro/**", ".qa/**"]
+}
