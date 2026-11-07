@@ -1,0 +1,132 @@
+---
+title: "API reference"
+description: "The public Rust API — functions, configuration types, scanned-data types, generators and the Error enum."
+type: reference
+---
+
+import { Aside, LinkCard } from '@astrojs/starlight/components';
+
+This page describes the crate's public API as exported from the crate root (`route_info_builder::…`). The CLI is feature-gated and omitted here; see the [CLI reference](/reference/cli/).
+
+## Functions
+
+| Function | Signature | Effect |
+| :--- | :--- | :--- |
+| `generate_links` | `(&Config) -> Result<String>` | Scans once; returns the Rust enum code and writes every configured output. |
+| `scan_routes` | `(&Config) -> Result<Vec<RouteInfo>>` | Returns the scanned routes. |
+| `scan_controllers_folder` | `(&Config) -> Result<Vec<RouteInfo>>` | Alias of `scan_routes`, kept for backward compatibility. |
+| `generate_ts_client` | `(&Config) -> Result<String>` | Returns the TypeScript client code without writing files. |
+| `generate_ts_hooks` | `(&Config) -> Result<String>` | Returns the TanStack Query hooks code without writing files. |
+| `generate_openapi_json` | `(&Config) -> Result<String>` | Returns the OpenAPI 3.1 skeleton as a JSON string. |
+| `generate_route_map_json` | `(&Config) -> Result<String>` | Returns the JSON route map as a string. |
+
+### `generate_links` side effects
+
+| Condition | Output written |
+| :--- | :--- |
+| `rust.output_file` set | The enum code at that path. |
+| `typescript.generate_client` enabled **and** `typescript.output_path` set | `client_file` and `hooks_file` inside that directory. |
+| `openapi.output_path` set | The OpenAPI document at that path. |
+| `route_map.output_path` set | The JSON route map at that path. |
+
+Every write creates missing parent directories first. The returned `String` is the same Rust code written to `rust.output_file`.
+
+### Configuration loading
+
+| Function | Signature | Effect |
+| :--- | :--- | :--- |
+| `Config::from_toml_str` | `(&str) -> Result<Config>` | Parses TOML; rejects unknown keys. |
+| `Config::from_toml_file` | `(&Path) -> Result<Config>` | Reads and parses a file (`Error::ReadFile` on failure). |
+| `Config::load` | `(Option<&Path>) -> Result<Config>` | Explicit path, or `route-info.toml` in the working directory when it exists, or defaults. |
+
+## Types
+
+| Type | Kind | Purpose |
+| :--- | :--- | :--- |
+| `Config` | struct | Top-level configuration; `Default` + `Deserialize` with `deny_unknown_fields`. |
+| `NamingConfig` | struct | The `[naming]` keys. |
+| `RustConfig` | struct | The `[rust]` keys. |
+| `TypeScriptConfig` | struct | The `[typescript]` keys. |
+| `AuthConfig` | struct | The `[typescript.auth]` keys. |
+| `OpenApiConfig` | struct | The `[openapi]` keys. |
+| `RouteMapConfig` | struct | The `[route_map]` keys. |
+| `CollisionStrategy` | enum | `Skip`, `AppendMethod`, `Number` (TOML: `skip`, `append-method`, `number`). |
+| `RouteInfo` | struct | One scanned route with naming and handler metadata. |
+| `HandlerInfo` | struct | Body/query extractors, auth flag, return type of the handler. |
+| `ReturnType` | struct | Detected conversion type and error information. |
+| `Error` | enum | All failures of the scan and generation pipeline; `#[non_exhaustive]`. |
+| `Result` | alias | `std::result::Result<T, Error>`. |
+
+Each configuration struct implements `Default`; each optional key has an accessor with the resolved fallback (for example `RustConfig::enum_name()` → `"Link"`).
+
+### `RouteInfo`, `HandlerInfo`, `ReturnType`
+
+| Field | Type | Meaning |
+| :--- | :--- | :--- |
+| `RouteInfo::name` | `String` | Base name generated from path and method. |
+| `RouteInfo::path` | `String` | Normalized URL path with `{param}` placeholders. |
+| `RouteInfo::method` | `String` | Upper-case HTTP method. |
+| `RouteInfo::handler` | `String` | Handler function name. |
+| `RouteInfo::handler_info` | `HandlerInfo` | Extra information from the handler. |
+| `HandlerInfo::body_param` | `Option<String>` | Inner type of a `Json<T>`-style body extractor. |
+| `HandlerInfo::query_params` | `Option<String>` | Inner type of a `Query<T>` extractor. |
+| `HandlerInfo::requires_auth` | `bool` | The handler takes an `auth: JWT` extractor. |
+| `HandlerInfo::return_type` | `ReturnType` | Conversion and error information. |
+| `ReturnType::found_type` | `Option<String>` | Type detected in the first `json(...)` conversion. |
+| `ReturnType::is_importable` | `bool` | Whether `found_type` is a user type worth importing. |
+| `ReturnType::error_types` | `BTreeSet<String>` | Error enum names returned by the handler. |
+| `ReturnType::error_variants` | `BTreeSet<String>` | Full error variant paths returned by the handler. |
+
+All three structs serialize with camelCase keys; see the [route map JSON reference](/reference/route-info-json/).
+
+## Generators
+
+Every generator implements the `CodeGenerator` trait:
+
+```rust
+pub trait CodeGenerator {
+  type Config;
+  type Output;
+  fn generate(routes: &[RouteInfo], config: &Self::Config) -> Result<Self::Output>;
+}
+```
+
+| Generator | Config | Output |
+| :--- | :--- | :--- |
+| `RustLinksGenerator` | `&Config` | `String` |
+| `TypeScriptClientGenerator` | `&TypeScriptConfig` | `String` |
+| `TypeScriptHooksGenerator` | `&TypeScriptConfig` | `String` |
+| `OpenApiGenerator` | `&OpenApiConfig` | `String` |
+
+Generators only return code; they never write files. Writing is `generate_links`'s job.
+
+## Errors
+
+`Error` is `#[non_exhaustive]` and derives `thiserror::Error`; every I/O variant carries the offending path and the underlying `#[source]`.
+
+| Variant | Message pattern | Source |
+| :--- | :--- | :--- |
+| `ReadDir` | `failed to read controllers directory \`{path}\`` | `std::io::Error` |
+| `ReadFile` | `failed to read controller file \`{path}\`` | `std::io::Error` |
+| `CreateDir` | `failed to create output directory \`{path}\`` | `std::io::Error` |
+| `WriteFile` | `failed to write output file \`{path}\`` | `std::io::Error` |
+| `Parse` | `failed to parse controller file \`{path}\`` | `syn::Error` |
+| `Config` | `invalid configuration: {0}` | `toml::de::Error` |
+| `Json` | `failed to serialize generated data: {0}` | `serde_json::Error` |
+
+<Aside type="caution">
+  Because `Error` is `#[non_exhaustive]`, match with a wildcard arm; new variants can appear in minor releases.
+</Aside>
+
+## Next steps
+
+<LinkCard
+  title="Configuration reference"
+  description="Every key the Config family accepts."
+  href="/reference/configuration/"
+/>
+<LinkCard
+  title="Route map JSON reference"
+  description="The serialized shape of RouteInfo."
+  href="/reference/route-info-json/"
+/>
