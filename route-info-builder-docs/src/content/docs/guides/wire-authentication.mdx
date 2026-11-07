@@ -1,0 +1,93 @@
+---
+title: "Wire authentication into the generated client"
+description: "Make the generated TypeScript client attach a bearer token to routes whose handler takes an auth: JWT extractor."
+type: how-to
+---
+
+import { Aside, LinkCard } from '@astrojs/starlight/components';
+
+This guide shows you how to connect the generated client to your frontend's auth token, and how a route becomes authenticated in the first place. Without this configuration the client is anonymous: no auth import, no token lookup, no `Authorization` header.
+
+**Preconditions**
+
+- A frontend module that can resolve the token, exporting (or able to export) a constant holding the token key — the generated code reads the token from `localStorage` under that key.
+- Regenerated artifacts after each configuration change.
+
+## Configure the auth plumbing
+
+Add the `auth` table to `[typescript]` in `route-info.toml`:
+
+```toml
+[typescript.auth]
+token_key_import = "TOKEN_KEY"       # constant name, default TOKEN_KEY
+import_from      = "@/hooks/use-auth"
+```
+
+`import_from` is what switches the client from anonymous to authenticated: it names the module the constant is imported from. The generated `client.ts` then contains:
+
+```typescript
+import { TOKEN_KEY } from "@/hooks/use-auth";
+
+export const apiClient = new ApiClient({
+  getToken: async () => {
+    return localStorage.getItem(TOKEN_KEY);
+  },
+});
+```
+
+Omit `[typescript.auth]` entirely to generate the anonymous client — for public APIs or when you wire the token elsewhere.
+
+## Flag authenticated routes in the handler
+
+The scanner marks a route as requiring authentication when its handler declares an extractor parameter named `auth` of type `JWT`:
+
+```rust
+async fn get_profile(auth: JWT) -> Response {
+  // ...
+}
+```
+
+The generated method for that route passes `requiresAuth: true` to the client. At request time the client awaits `getToken()` and sets the header when a token exists:
+
+```typescript
+if (options.requiresAuth && this.getToken) {
+  const token = await this.getToken();
+  if (token) {
+    headers.set("Authorization", "Bearer " + token);
+  }
+}
+```
+
+Routes whose handlers take no `auth: JWT` parameter pass `requiresAuth: false` — the client sends no `Authorization` header for them even when a token exists.
+
+## Verify the generated output
+
+Regenerate and check both sides:
+
+```bash
+route-info-builder generate
+rg "TOKEN_KEY|requiresAuth" frontend/src/api/client.ts
+```
+
+You should see the import, the `getToken` wiring, and `requiresAuth: true` on exactly the routes whose handlers take the extractor.
+
+<Aside type="caution">
+  The token is read from `localStorage` at call time. If your token lives in memory or in an httpOnly cookie, keep the client anonymous and wrap `client` methods, or post-process the generated file — the scanner does not emit custom getToken implementations.
+</Aside>
+
+<Aside type="note">
+  Rust-side handler analysis is per file: the extractor is detected by the parameter's name (`auth`) and its type (`JWT`), so the import path used for the `JWT` type in your controller does not matter.
+</Aside>
+
+## Next steps
+
+<LinkCard
+  title="Configuration reference"
+  description="Types and defaults for [typescript.auth] keys."
+  href="/reference/configuration/"
+/>
+<LinkCard
+  title="How scanning works"
+  description="How handler metadata, including auth, is extracted."
+  href="/explanation/scanning-pipeline/"
+/>
