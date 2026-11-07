@@ -1,0 +1,73 @@
+---
+title: "Troubleshoot scanning"
+description: "Fix the four documented failure modes — routes not found, dropped duplicates, inconsistent parameter warnings and Parse errors."
+type: how-to
+---
+
+import { Aside, LinkCard } from '@astrojs/starlight/components';
+
+This guide shows you how to diagnose and fix each failure mode the scanner documents. Work through the symptom that matches your build output.
+
+## Routes not found
+
+**Symptom:** `cargo:warning: route-info-builder: no routes found under src/controllers`, or some of your routes are missing from the output.
+
+Check the four rules the scanner applies when collecting routes:
+
+1. **Function name.** Only a function named `routes` is read. A controller whose builder function is called something else is invisible until you say so:
+
+    ```toml
+    controllers_fn = "api_routes"
+    ```
+
+2. **File name.** `mod.rs` files and dot-files are skipped; only `*.rs` files are considered (case-insensitive extension). Rename `mod.rs` content into a regular file such as `users.rs`.
+
+3. **Statement shape.** Registration calls must appear as expressions in the function body — one chained expression or one statement per call. Routes built across `let` bindings and only returned at the end are not seen. Rewrite as a statement chain:
+
+    ```rust
+    // Not seen: the router is assembled across let bindings.
+    let router = Router::new();
+    let router = router.route("/api/users", get(list_users));
+    router
+
+    // Seen: each registration is its own statement expression.
+    let router = Router::new();
+    router.route("/api/users", get(list_users))
+    ```
+
+4. **Path syntax.** Both `{param}` and legacy `:param` are understood and canonicalized, so a legacy route still appears — but under its canonical form (`/items/{item_id}`).
+
+## Routes disappear as duplicates
+
+**Symptom:** `cargo:warning` messages about dropped routes; a route you declared twice exists only once in the output.
+
+Duplicate `(method, path)` pairs are dropped by design — the first occurrence wins, in sorted-file, statement order. Remove the duplicate registration, or keep both by making the paths differ. Naming-level collisions (same variant name, different URLs) are a separate mechanism controlled by `collision_strategy`; see [Configure generated names](/guides/configure-naming/).
+
+## Inconsistent parameter names
+
+**Symptom:** a `cargo:warning` about inconsistent parameter names.
+
+Routes that share the same path shape but use different parameter names — `/items/{id}` in one controller and `/items/{item_id}` in another — produce this warning. Positions are compared independently, so the warning points at the mismatching position. Align the names; the generated field names follow the route's own segment, so mismatched names also yield inconsistent TypeScript parameters.
+
+## Build fails with a Parse error
+
+**Symptom:** `failed to parse controller file \`src/controllers/users.rs\`` followed by the syntax error.
+
+Every collected `*.rs` file is parsed as a full Rust AST — including files that contain no `routes` function. All controller files must compile as valid Rust in isolation. Move non-Rust content out of the controllers folder, or point `controllers_path` at a folder that contains only Rust controllers.
+
+<Aside type="caution">
+  A `Parse` error is fatal: nothing is generated until the file parses. The error message names the file; the `syn` source chain names the line and column.
+</Aside>
+
+## Next steps
+
+<LinkCard
+  title="How scanning works"
+  description="The full pipeline, from file collection to handler metadata."
+  href="/explanation/scanning-pipeline/"
+/>
+<LinkCard
+  title="API reference"
+  description="The Error enum and the scan functions behind these symptoms."
+  href="/reference/api/"
+/>
