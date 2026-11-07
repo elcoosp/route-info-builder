@@ -1,0 +1,44 @@
+---
+title: "Route Info Builder"
+description: "Type-safe Rust links, TypeScript clients and OpenAPI skeletons generated from your existing Axum controllers."
+template: splash
+hero:
+  title: Route Info Builder
+  tagline: A build-time route scanner for Axum-like frameworks — type-safe Rust link enums, a typed TypeScript client with TanStack Query hooks, an OpenAPI 3.1 skeleton and a JSON route map, all from your existing controller files.
+  image:
+    file: ../../assets/logo.png
+    alt: Route Info Builder logo
+  actions:
+    - text: Get started
+      link: /tutorials/getting-started/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/elcoosp/route-info-builder
+      icon: external
+      variant: minimal
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+<CardGrid>
+  <LinkCard
+    title="Tutorials"
+    description="Learn by building: from an empty Axum project to typed calls on both sides."
+    href="/tutorials/getting-started/"
+  />
+  <LinkCard
+    title="How-to guides"
+    description="Solve a specific problem: the CLI, naming rules, authentication, scanning failures."
+    href="/guides/generate-from-cli/"
+  />
+  <LinkCard
+    title="Reference"
+    description="Look up a configuration key, a CLI flag, a public function or the JSON route map."
+    href="/reference/configuration/"
+  />
+  <LinkCard
+    title="Explanation"
+    description="Understand how the scanner works and why the design looks the way it does."
+    href="/explanation/scanning-pipeline/"
+  />
+</CardGrid>
