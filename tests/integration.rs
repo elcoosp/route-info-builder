@@ -306,3 +306,112 @@ fn invalid_controller_files_surface_parse_errors() {
             .contains("failed to parse controller file")
     );
 }
+
+#[test]
+fn typescript_client_keys_stay_unique_when_names_collide() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let controllers = dir.path().join("controllers");
+    std::fs::create_dir_all(&controllers).expect("dir");
+    std::fs::write(
+        controllers.join("users.rs"),
+        "fn routes() -> Router {\n  Router::new()\n    .route(\"/users\", get(list_users))\n    .route(\"/users\", post(create_user))\n}\n",
+    )
+    .expect("fixture");
+    let config = Config::from_toml_str(&format!(
+        "controllers_path = \"{}\"\n[naming]\ninclude_method_in_names = false\ncollision_strategy = \"append-method\"\n",
+        controllers.display()
+    ))
+    .expect("config");
+
+    // The Rust enum resolves the collision (Users / PostUsers); the
+    // TypeScript client must emit exactly one object entry per route.
+    let client = generate_ts_client(&config).expect("client");
+    assert_eq!(
+        client.matches("users: async").count(),
+        1,
+        "duplicate `users` key must be resolved, client was:\n{client}"
+    );
+    assert!(
+        client.contains("postUsers: async"),
+        "the POST route must surface under the resolved key `postUsers`, client was:\n{client}"
+    );
+}
+
+#[test]
+fn openapi_operation_ids_stay_unique_when_names_collide() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let controllers = dir.path().join("controllers");
+    std::fs::create_dir_all(&controllers).expect("dir");
+    std::fs::write(
+        controllers.join("users.rs"),
+        "fn routes() -> Router {\n  Router::new()\n    .route(\"/users\", get(list_users))\n    .route(\"/users\", post(create_user))\n}\n",
+    )
+    .expect("fixture");
+    let config = Config::from_toml_str(&format!(
+        "controllers_path = \"{}\"\n[naming]\ninclude_method_in_names = false\ncollision_strategy = \"append-method\"\n",
+        controllers.display()
+    ))
+    .expect("config");
+
+    let openapi = generate_openapi_json(&config).expect("openapi");
+    let parsed: serde_json::Value = serde_json::from_str(&openapi).expect("valid json");
+    let mut operation_ids: Vec<String> = Vec::new();
+    for operations in parsed["paths"].as_object().expect("paths").values() {
+        for operation in operations.as_object().expect("operations").values() {
+            operation_ids.push(
+                operation["operationId"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+            );
+        }
+    }
+    operation_ids.sort();
+    let total = operation_ids.len();
+    operation_ids.dedup();
+    assert_eq!(
+        operation_ids.len(),
+        total,
+        "operationIds must be globally unique, got: {operation_ids:?}"
+    );
+}
+
+#[test]
+fn rust_names_match_typescript_client_keys() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let controllers = dir.path().join("controllers");
+    std::fs::create_dir_all(&controllers).expect("dir");
+    std::fs::write(
+        controllers.join("users.rs"),
+        "fn routes() -> Router {\n  Router::new()\n    .route(\"/users\", get(list_users))\n    .route(\"/users\", post(create_user))\n}\n",
+    )
+    .expect("fixture");
+    // The variant prefix changes the enum variant names; the documented
+    // `name()` parity with the TypeScript client keys must survive it.
+    let config = Config::from_toml_str(&format!(
+        "controllers_path = \"{}\"\n[naming]\nvariant_prefix = \"Api\"\n",
+        controllers.display()
+    ))
+    .expect("config");
+
+    let code = generate_links(&config).expect("rust");
+    let client = generate_ts_client(&config).expect("client");
+
+    for (variant, ts_key) in [
+        ("ApiGetUsers", "apiGetUsers"),
+        ("ApiPostUsers", "apiPostUsers"),
+    ] {
+        assert!(
+            code.contains("pub enum Link") && code.contains(variant),
+            "expected variant `{variant}` in Rust code:\n{code}"
+        );
+        assert!(
+            code.contains(&format!("=> \"{ts_key}\"")),
+            "expected `name()` arm `{ts_key}` in Rust code:\n{code}"
+        );
+        assert!(
+            client.contains(&format!("{ts_key}: async")),
+            "expected client key `{ts_key}` (parity with Rust name()), client was:\n{client}"
+        );
+    }
+}
