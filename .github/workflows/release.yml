@@ -1,68 +1,28 @@
+# Release + changelog — calls the canonical reusable workflow.
+# Copy to .github/workflows/release.yml in every fleet repo.
+#
+# The reusable workflow lives at:
+#   elcoosp/docs-toolkit/.github/workflows/changelog.yml@main
+#
+# It uses the canonical cliff.toml at:
+#   docs-toolkit/git-cliff/cliff.toml
+#
+# No cliff.toml is stored in this repo — config is fetched at runtime.
+
 name: Release
 
 on:
   push:
-    tags: ["v[0-9].*"]
-  workflow_dispatch:
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
-
-env:
-  CARGO_TERM_COLOR: always
+  pull-requests: write
 
 jobs:
-  release:
-    name: Changelog, GitHub release and crate publish
-    runs-on: ubuntu-latest
-    env:
-      # Job-level mapping makes the secret usable from `if:` conditions.
-      HAS_CARGO_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN != '' }}
-    steps:
-      - name: Checkout full history (git-cliff needs all commits and tags)
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Generate release notes with git-cliff
-        uses: orhun/git-cliff-action@v4
-        id: cliff
-        with:
-          config: cliff.toml
-          args: "--latest --strip header --config-url https://raw.githubusercontent.com/elcoosp/docs-toolkit/main/git-cliff/cliff.toml"
-
-      - name: Update CHANGELOG.md
-        uses: orhun/git-cliff-action@v4
-        with:
-          config: cliff.toml
-          args: --output CHANGELOG.md
-        env:
-          OUTPUT: CHANGELOG.md
-          GITHUB_REPO: ${{ github.repository }}
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Upload the CLI binary to the GitHub release
-        uses: taiki-e/upload-rust-binary-action@v1
-        with:
-          bin: route-info-builder
-          target: x86_64-unknown-linux-gnu
-          tar: unix
-          zip: windows
-          token: ${{ secrets.GITHUB_TOKEN }}
-          ref: refs/tags/${{ github.ref_name }}
-
-      - name: Create or update the GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          body: ${{ steps.cliff.outputs.changelog }}
-          files: CHANGELOG.md
-
-      - name: Publish to crates.io
-        if: env.HAS_CARGO_TOKEN == 'true'
-        run: cargo publish --all-features
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+  changelog:
+    uses: elcoosp/docs-toolkit/.github/workflows/changelog.yml@main
+    with:
+      mode: release
+    secrets: inherit
