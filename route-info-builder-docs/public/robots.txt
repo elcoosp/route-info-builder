@@ -1,2 +1,4 @@
 User-agent: *
 Allow: /
+
+Sitemap: https://route-info-builder.vercel.app/sitemap-index.xml
