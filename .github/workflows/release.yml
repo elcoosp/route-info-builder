@@ -29,7 +29,7 @@ jobs:
         id: cliff
         with:
           config: cliff.toml
-          args: --latest --strip header
+          args: "--latest --strip header --config-url https://raw.githubusercontent.com/elcoosp/docs-toolkit/main/git-cliff/cliff.toml"
 
       - name: Update CHANGELOG.md
         uses: orhun/git-cliff-action@v4
