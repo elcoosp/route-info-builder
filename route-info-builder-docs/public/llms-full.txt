@@ -205,10 +205,8 @@ This guide shows you how to control the names the generator produces: which meth
 
 ## Shorten names by removing a path prefix
 
-```toml
-[naming]
-path_prefix_to_remove = "/api"
-```
+<Code lang="toml" code={`[naming]
+path_prefix_to_remove = "/api"`} />
 
 `GET /api/users` then produces the variant `GetUsers` while `to_path()` still returns `/api/users`. Prefix matching is segment-aware: removing `/user` does not touch a `/users` route.
 
@@ -216,20 +214,16 @@ path_prefix_to_remove = "/api"
 
 By default the method is part of every base name, which is why `GET /api/users` and `POST /api/users` become `GetApiUsers` and `PostApiUsers`. Remove it when your routes do not collide without it:
 
-```toml
-[naming]
-include_method_in_names = false
-```
+<Code lang="toml" code={`[naming]
+include_method_in_names = false`} />
 
 With collisions likely (one path, several verbs), prefer a [collision strategy](#resolve-name-collisions) over dropping the method.
 
 ## Change the casing
 
-```toml
-[naming]
+<Code lang="toml" code={`[naming]
 variant_case = "pascal" # enum variants, default
-field_case   = "snake"  # parameter fields, default
-```
+field_case   = "snake"  # parameter fields, default`} />
 
 Accepted spellings for both keys: `camel`/`camelCase`, `pascal`/`PascalCase`, `snake`/`snake_case`, `kebab`/`kebab-case`, `title`/`Title Case`, `lower`/`lowercase`, `upper`/`uppercase`. An unknown spelling falls back to the default for that key.
 
@@ -239,19 +233,15 @@ Accepted spellings for both keys: `camel`/`camelCase`, `pascal`/`PascalCase`, `s
 
 `convert_case` treats a digit as a word boundary by default, so `/api/v1/users` becomes `GetApiV_1Users` in pascal or `v_1` in snake case. Set the key to `false` to glue digits to the preceding word:
 
-```toml
-[naming]
-preserve_numbers = false # v1 not v_1
-```
+<Code lang="toml" code={`[naming]
+preserve_numbers = false # v1 not v_1`} />
 
 ## Add prefixes, suffixes and extra separators
 
-```toml
-[naming]
+<Code lang="toml" code={`[naming]
 variant_prefix  = "Api"    # ApiGetUsers
 variant_suffix  = "Route"  # GetUsersRoute
-word_separators = "+~"     # extra characters treated as word separators
-```
+word_separators = "+~"     # extra characters treated as word separators`} />
 
 `/`, `-`, `.` and `:` always act as separators; `word_separators` adds further characters on top of that set.
 
@@ -259,10 +249,8 @@ word_separators = "+~"     # extra characters treated as word separators
 
 Two routes can produce the same base name — for example `GET /users/deactivated` and a path parameter both mapping to `GetUsers`. Choose what the generator does:
 
-```toml
-[naming]
-collision_strategy = "skip" # skip | append-method | number
-```
+<Code lang="toml" code={`[naming]
+collision_strategy = "skip" # skip | append-method | number`} />
 
 | Strategy | Behavior |
 | :--- | :--- |
@@ -278,9 +266,7 @@ collision_strategy = "skip" # skip | append-method | number
 
 Rebuild or re-run `route-info-builder generate`, then search the generated Rust file for your variants:
 
-```bash
-rg "pub enum Link" -A 12 src/links.rs
-```
+<Code lang="bash" code={`rg "pub enum Link" -A 12 src/links.rs`} />
 
 <Aside type="note">
   `name()` on every variant returns the camelCase form of the same name the TypeScript client uses as its method key. Renaming variants therefore renames the client methods and the TanStack Query keys with them.
@@ -314,42 +300,32 @@ This guide shows you how to produce the Rust link enum, the TypeScript client an
 
 ## Install the binary
 
-```bash
-cargo install route-info-builder
-```
+<Code lang="bash" code={`cargo install route-info-builder`} />
 
 The binary is a default crate feature. Library consumers who never want it can build with `default-features = false` to drop `clap` from the dependency tree.
 
 ## Scaffold a configuration file
 
-```bash
-route-info-builder init
-```
+<Code lang="bash" code={`route-info-builder init`} />
 
 You should now see a `route-info.toml` in the working directory containing the starter configuration. The command refuses to overwrite an existing file; pass `--force` when you mean to replace it:
 
-```bash
-route-info-builder init --force
-```
+<Code lang="bash" code={`route-info-builder init --force`} />
 
 `init` accepts one positional path (default `route-info.toml`). Edit the generated file so `controllers_path` points at your controllers folder — the starter value is `src/controllers`.
 
 ## Generate every configured output
 
-```bash
-route-info-builder generate
-```
+<Code lang="bash" code={`route-info-builder generate`} />
 
 You should see a summary like:
 
-```ansi
-Generated Rust link enum (2413 bytes).
+<Code lang="ansi" code={`Generated Rust link enum (2413 bytes).
   rust:      src/generated/links.rs
   typescript: frontend/src/api/client.ts
               frontend/src/api/api.ts
   openapi:   openapi.json
-  route map: routes.json
-```
+  route map: routes.json`} />
 
 Only the outputs configured in your TOML file appear in the summary.
 
@@ -368,21 +344,15 @@ Each `generate` flag overrides the matching configuration key for that run, with
 
 For example, to generate the TypeScript client into a different checkout without touching the config:
 
-```bash
-route-info-builder generate --ts-dir ../other-frontend/src/api
-```
+<Code lang="bash" code={`route-info-builder generate --ts-dir ../other-frontend/src/api`} />
 
 ## Inspect the scanned routes
 
-```bash
-route-info-builder scan
-```
+<Code lang="bash" code={`route-info-builder scan`} />
 
 Prints the JSON route map to stdout — the same records `route_map.output_path` writes to disk. Pipe it into your tool of choice:
 
-```bash
-route-info-builder scan | jq '.[].path'
-```
+<Code lang="bash" code={`route-info-builder scan | jq '.[].path'`} />
 
 <Aside type="caution">
   A scan fails when the controllers folder cannot be read or any controller file is not valid Rust. The error message names the file.
@@ -425,24 +395,20 @@ Check the four rules the scanner applies when collecting routes:
 
 1. **Function name.** Only a function named `routes` is read. A controller whose builder function is called something else is invisible until you say so:
 
-    ```toml
-    controllers_fn = "api_routes"
-    ```
+    <Code lang="toml" code={`controllers_fn = "api_routes"`} />
 
 2. **File name.** `mod.rs` files and dot-files are skipped; only `*.rs` files are considered (case-insensitive extension). Rename `mod.rs` content into a regular file such as `users.rs`.
 
 3. **Statement shape.** Registration calls must appear as expressions in the function body — one chained expression or one statement per call. Routes built across `let` bindings and only returned at the end are not seen. Rewrite as a statement chain:
 
-    ```rust
-    // Not seen: the router is assembled across let bindings.
-    let router = Router::new();
-    let router = router.route("/api/users", get(list_users));
-    router
+    <Code lang="rust" code={`// Not seen: the router is assembled across let bindings.
+let router = Router::new();
+let router = router.route("/api/users", get(list_users));
+router
 
-    // Seen: each registration is its own statement expression.
-    let router = Router::new();
-    router.route("/api/users", get(list_users))
-    ```
+// Seen: each registration is its own statement expression.
+let router = Router::new();
+router.route("/api/users", get(list_users))`} />
 
 4. **Path syntax.** Both `{param}` and legacy `:param` are understood and canonicalized, so a legacy route still appears — but under its canonical form (`/items/{item_id}`).
 
@@ -498,22 +464,19 @@ This guide shows you how to connect the generated client to your frontend's auth
 
 Add the `auth` table to `[typescript]` in `route-info.toml`:
 
-```toml
-[typescript.auth]
+<Code lang="toml" code={`[typescript.auth]
 token_key_import = "TOKEN_KEY"       # constant name, default TOKEN_KEY
-import_from      = "@/hooks/use-auth"
-```
+import_from      = "@/hooks/use-auth"`} />
 
 `import_from` is what switches the client from anonymous to authenticated: it names the module the constant is imported from. The generated `client.ts` then contains:
 
-```typescript
+<Code lang="typescript" code={`import { TOKEN_KEY } from "@/hooks/use-auth";
 
 export const apiClient = new ApiClient({
-  getToken: async () => {
-    return localStorage.getItem(TOKEN_KEY);
-  },
-});
-```
+    getToken: async () => {
+        return localStorage.getItem(TOKEN_KEY);
+    },
+});`} />
 
 Omit `[typescript.auth]` entirely to generate the anonymous client — for public APIs or when you wire the token elsewhere.
 
@@ -521,22 +484,18 @@ Omit `[typescript.auth]` entirely to generate the anonymous client — for publi
 
 The scanner marks a route as requiring authentication when its handler declares an extractor parameter named `auth` of type `JWT`:
 
-```rust
-async fn get_profile(auth: JWT) -> Response {
-  // ...
-}
-```
+<Code lang="rust" code={`async fn get_profile(auth: JWT) -> Response {
+    // ...
+}`} />
 
 The generated method for that route passes `requiresAuth: true` to the client. At request time the client awaits `getToken()` and sets the header when a token exists:
 
-```typescript
-if (options.requiresAuth && this.getToken) {
-  const token = await this.getToken();
-  if (token) {
-    headers.set("Authorization", "Bearer " + token);
-  }
-}
-```
+<Code lang="typescript" code={`if (options.requiresAuth && this.getToken) {
+    const token = await this.getToken();
+    if (token) {
+        headers.set("Authorization", "Bearer " + token);
+    }
+}`} />
 
 Routes whose handlers take no `auth: JWT` parameter pass `requiresAuth: false` — the client sends no `Authorization` header for them even when a token exists.
 
@@ -544,10 +503,8 @@ Routes whose handlers take no `auth: JWT` parameter pass `requiresAuth: false` �
 
 Regenerate and check both sides:
 
-```bash
-route-info-builder generate
-rg "TOKEN_KEY|requiresAuth" frontend/src/api/client.ts
-```
+<Code lang="bash" code={`route-info-builder generate
+rg "TOKEN_KEY|requiresAuth" frontend/src/api/client.ts`} />
 
 You should see the import, the `getToken` wiring, and `requiresAuth: true` on exactly the routes whose handlers take the extractor.
 
@@ -587,6 +544,7 @@ This page describes the crate's public API as exported from the crate root (`rou
 | `generate_links` | `(&Config) -> Result<String>` | Scans once; returns the Rust enum code and writes every configured output. |
 | `scan_routes` | `(&Config) -> Result<Vec<RouteInfo>>` | Returns the scanned routes. |
 | `scan_controllers_folder` | `(&Config) -> Result<Vec<RouteInfo>>` | Alias of `scan_routes`, kept for backward compatibility. |
+| `resolve_route_names` | `(&[RouteInfo], &NamingConfig) -> Vec<NamedRoute>` | Applies the naming rules and the collision strategy once; every generator consumes the resolved names. |
 | `generate_ts_client` | `(&Config) -> Result<String>` | Returns the TypeScript client code without writing files. |
 | `generate_ts_hooks` | `(&Config) -> Result<String>` | Returns the TanStack Query hooks code without writing files. |
 | `generate_openapi_json` | `(&Config) -> Result<String>` | Returns the OpenAPI 3.1 skeleton as a JSON string. |
@@ -624,6 +582,7 @@ Every write creates missing parent directories first. The returned `String` is t
 | `RouteMapConfig` | struct | The `[route_map]` keys. |
 | `CollisionStrategy` | enum | `Skip`, `AppendMethod`, `Number` (TOML: `skip`, `append-method`, `number`). |
 | `RouteInfo` | struct | One scanned route with naming and handler metadata. |
+| `NamedRoute` | struct | A `RouteInfo` plus its final, collision-resolved `variant` and `ts_name`. |
 | `HandlerInfo` | struct | Body/query extractors, auth flag, return type of the handler. |
 | `ReturnType` | struct | Detected conversion type and error information. |
 | `Error` | enum | All failures of the scan and generation pipeline; `#[non_exhaustive]`. |
@@ -651,17 +610,29 @@ Each configuration struct implements `Default`; each optional key has an accesso
 
 All three structs serialize with camelCase keys; see the [route map JSON reference](/reference/route-info-json/).
 
+### `NamedRoute`
+
+Name resolution is a single pipeline stage between scanning and generation: `resolve_route_names(&routes, &config.naming)` applies `variant_case`, `variant_prefix`/`variant_suffix`, `preserve_numbers` and the configured `collision_strategy` exactly once. Routes dropped under `skip` never reach a generator.
+
+| Field | Type | Meaning |
+| :--- | :--- | :--- |
+| `route` | `&RouteInfo` | The scanned route. |
+| `variant` | `String` | Final Rust enum variant body (`GetUsers`, `ApiGetUsersRoute`, ...). |
+| `ts_name` | `String` | camelCase of `variant`; the TypeScript client key, the hook name suffix and the OpenAPI `operationId` — always equal to the generated Rust `name()` value. |
+
+`NamedRoute::params_interface()` returns the `...Params` interface name used by the TypeScript artifacts.
+
+Because the Rust enum, the TypeScript client and hooks, and the OpenAPI document all consume the same resolved names, their identifiers stay in parity even when the naming configuration collapses distinct routes onto one base name (for example with `include_method_in_names = false`).
+
 ## Generators
 
 Every generator implements the `CodeGenerator` trait:
 
-```rust
-pub trait CodeGenerator {
-  type Config;
-  type Output;
-  fn generate(routes: &[RouteInfo], config: &Self::Config) -> Result<Self::Output>;
-}
-```
+<Code lang="rust" code={`pub trait CodeGenerator {
+    type Config;
+    type Output;
+    fn generate(routes: &[RouteInfo], config: &Self::Config) -> Result<Self::Output>;
+}`} />
 
 | Generator | Config | Output |
 | :--- | :--- | :--- |
@@ -671,6 +642,8 @@ pub trait CodeGenerator {
 | `OpenApiGenerator` | `&OpenApiConfig` | `String` |
 
 Generators only return code; they never write files. Writing is `generate_links`'s job.
+
+Each generator also exposes a `generate_named(&[NamedRoute], config)` entry point that consumes pre-resolved names. The `generate(&[RouteInfo], ...)` trait methods resolve names internally — with the full `naming` configuration for the Rust generator and with the default naming rules for the TypeScript and OpenAPI generators, whose configs do not embed the scan-time naming. Prefer `generate_named` whenever the naming configuration is customized.
 
 ## Errors
 
@@ -738,14 +711,12 @@ Overrides apply for the current invocation only; the TOML file is not modified.
 
 Loads the configuration, applies flag overrides, scans the controllers and writes every configured output, creating parent directories. Prints a summary listing each written artifact:
 
-```ansi
-Generated Rust link enum (2413 bytes).
+<Code lang="ansi" code={`Generated Rust link enum (2413 bytes).
   rust:      src/generated/links.rs
   typescript: frontend/src/api/client.ts
               frontend/src/api/api.ts
   openapi:   openapi.json
-  route map: routes.json
-```
+  route map: routes.json`} />
 
 Lines appear only for outputs that are configured (or overridden).
 
@@ -875,8 +846,7 @@ Both files are written only when `generate_client` is enabled **and** `output_pa
 
 ## Full example
 
-```toml
-controllers_path = "src/controllers"
+<Code lang="toml" code={`controllers_path = "src/controllers"
 controllers_fn   = "routes"
 
 [naming]
@@ -912,8 +882,7 @@ title       = "My API"
 version     = "0.1.0"
 
 [route_map]
-output_path = "routes.json"
-```
+output_path = "routes.json"`} />
 
 <Aside type="caution">
   Unknown keys anywhere in the file — top level or inside a table — are rejected: `invalid configuration: unknown field …`. The same applies to unknown `[naming]` keys and to a `collision_strategy` value outside the three accepted spellings.
@@ -970,8 +939,7 @@ This page describes the JSON route map: the serializable form of every scanned `
 
 ## Example record
 
-```json
-{
+<Code lang="json" code={`{
   "name": "get_api_users_user_id",
   "path": "/api/users/{user_id}",
   "method": "GET",
@@ -987,8 +955,7 @@ This page describes the JSON route map: the serializable form of every scanned `
       "errorVariants": ["BadRequest::EmailAlreadyExists"]
     }
   }
-}
-```
+}`} />
 
 ## Determinism
 
@@ -1033,48 +1000,42 @@ This tutorial takes you from an empty Rust project to generated routing artifact
 
 1. **Create the Axum project and one controller file.**
 
-    ```bash
-    cargo new shop-api
-    cd shop-api
-    mkdir -p src/controllers
-    ```
+    <Code lang="bash" code={`cargo new shop-api
+cd shop-api
+mkdir -p src/controllers`} />
 
     Add the runtime dependencies to `Cargo.toml`:
 
-    ```toml
-    [dependencies]
-    axum = "0.8"
-    tokio = { version = "1", features = ["full"] }
+    <Code lang="toml" code={`[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
 
-    [build-dependencies]
-    route-info-builder = "0.2"
-    ```
+[build-dependencies]
+route-info-builder = "0.2"`} />
 
     Create the controller `src/controllers/users.rs`. The scanner looks for a function named `routes` inside every `*.rs` file under your controllers folder:
 
-    ```rust
-    use axum::routing::{get, post};
-    use axum::Router;
+    <Code lang="rust" code={`use axum::routing::{get, post};
+use axum::Router;
 
-    pub fn routes() -> Router {
-    Router::new()
-      .route("/api/users", get(list_users))
-      .route("/api/users", post(create_user))
-      .route("/api/users/{user_id}", get(get_user))
-    }
+pub fn routes() -> Router {
+Router::new()
+    .route("/api/users", get(list_users))
+    .route("/api/users", post(create_user))
+    .route("/api/users/{user_id}", get(get_user))
+}
 
-    async fn list_users() -> &'static str {
-    "[]"
-    }
+async fn list_users() -> &'static str {
+"[]"
+}
 
-    async fn create_user() -> &'static str {
-    "created"
-    }
+async fn create_user() -> &'static str {
+"created"
+}
 
-    async fn get_user() -> &'static str {
-    "user"
-    }
-    ```
+async fn get_user() -> &'static str {
+"user"
+}`} />
 
     Your project now looks like this:
 
@@ -1091,41 +1052,35 @@ This tutorial takes you from an empty Rust project to generated routing artifact
 
     Create `build.rs` in the project root. Every field below is a real configuration key; `Config` implements `Default`, so you only set what you need:
 
-    ```rust
-    use route_info_builder::{Config, RustConfig, TypeScriptConfig};
+    <Code lang="rust" code={`use route_info_builder::{Config, RustConfig, TypeScriptConfig};
 
-    fn main() {
-    let config = Config {
-      controllers_path: "src/controllers".into(),
-      rust: RustConfig {
+fn main() {
+let config = Config {
+    controllers_path: "src/controllers".into(),
+    rust: RustConfig {
         output_file: Some("src/links.rs".into()),
         ..RustConfig::default()
-      },
-      typescript: TypeScriptConfig {
+    },
+    typescript: TypeScriptConfig {
         generate_client: Some(true),
         output_path: Some("../web/src/api".into()),
         ..TypeScriptConfig::default()
-      },
-      ..Config::default()
-    };
+    },
+    ..Config::default()
+};
 
-    route_info_builder::generate_links(&config).expect("failed to generate route links");
-    }
-    ```
+route_info_builder::generate_links(&config).expect("failed to generate route links");
+}`} />
 
     This one call scans once, returns the generated Rust code, and writes every configured output to disk, creating parent directories as needed.
 
 3. **Generate the artifacts.**
 
-    ```bash
-    cargo build
-    ```
+    <Code lang="bash" code={`cargo build`} />
 
     You should now see the generated files, and Cargo prints the scanner's build-time note about the TypeScript client:
 
-    ```ansi
-    ​warning: route-info-builder: generated TypeScript client at ../web/src/api
-    ```
+    <Code lang="ansi" code={`​warning: route-info-builder: generated TypeScript client at ../web/src/api`} />
 
     Your tree now contains three generated files:
 
@@ -1142,13 +1097,11 @@ This tutorial takes you from an empty Rust project to generated routing artifact
 
     Open `src/links.rs`. You should see one enum with one variant per route — the method is part of the name by default, and path parameters become fields:
 
-    ```rust
-    pub enum Link {
-    GetApiUsers,
-    PostApiUsers,
-    GetApiUsersUserId { user_id: String },
-    }
-    ```
+    <Code lang="rust" code={`pub enum Link {
+GetApiUsers,
+PostApiUsers,
+GetApiUsersUserId { user_id: String },
+}`} />
 
     Open `../web/src/api` (it does not exist yet, the build script creates it): you should find `client.ts`, a self-contained HTTP client with typed methods, and `api.ts`, the TanStack Query hooks.
 
@@ -1156,32 +1109,26 @@ This tutorial takes you from an empty Rust project to generated routing artifact
 
     Declare the generated module in `src/main.rs` and try the three methods every variant carries:
 
-    ```rust
-    mod links;
+    <Code lang="rust" code={`mod links;
 
-    use links::Link;
+use links::Link;
 
-    #[tokio::main]
-    async fn main() {
-    let user_link = Link::GetApiUsersUserId { user_id: "123".to_string() };
+#[tokio::main]
+async fn main() {
+let user_link = Link::GetApiUsersUserId { user_id: "123".to_string() };
 
-    println!("Path: {}", user_link.to_path()); // /api/users/123
-    println!("Method: {}", user_link.method()); // GET
-    println!("Name: {}", user_link.name()); // getApiUsersUserId
-    }
-    ```
+println!("Path: {}", user_link.to_path()); // /api/users/123
+println!("Method: {}", user_link.method()); // GET
+println!("Name: {}", user_link.name()); // getApiUsersUserId
+}`} />
 
     Run it:
 
-    ```bash
-    cargo run
-    ```
+    <Code lang="bash" code={`cargo run`} />
 
-    ```ansi
-    Path: /api/users/123
-    Method: GET
-    Name: getApiUsersUserId
-    ```
+    <Code lang="ansi" code={`Path: /api/users/123
+Method: GET
+Name: getApiUsersUserId`} />
 
     `name()` returns the same key the TypeScript client uses, which keeps query keys in sync across both languages.
 
@@ -1191,28 +1138,22 @@ This tutorial takes you from an empty Rust project to generated routing artifact
 
     <Tabs>
     <TabItem label="pnpm">
-      ```bash
-      pnpm create vite@latest web --template react-ts
-      cd web
-      pnpm install
-      pnpm add @tanstack/react-query
-      ```
+      <Code lang="bash" code={`pnpm create vite@latest web --template react-ts
+cd web
+pnpm install
+pnpm add @tanstack/react-query`} />
     </TabItem>
     <TabItem label="npm">
-      ```bash
-      npm create vite@latest web -- --template react-ts
-      cd web
-      npm install
-      npm install @tanstack/react-query
-      ```
+      <Code lang="bash" code={`npm create vite@latest web -- --template react-ts
+cd web
+npm install
+npm install @tanstack/react-query`} />
     </TabItem>
     <TabItem label="yarn">
-      ```bash
-      yarn create vite@latest web --template react-ts
-      cd web
-      yarn install
-      yarn add @tanstack/react-query
-      ```
+      <Code lang="bash" code={`yarn create vite@latest web --template react-ts
+cd web
+yarn install
+yarn add @tanstack/react-query`} />
     </TabItem>
     </Tabs>
 
@@ -1220,52 +1161,43 @@ This tutorial takes you from an empty Rust project to generated routing artifact
 
     The generated `api.ts` exposes one hook per route: `useQuery` hooks for GET routes and `useMutation` hooks for everything else. Replace the contents of `web/src/main.tsx`:
 
-    ```tsx
-    import { StrictMode } from "react";
-    import { createRoot } from "react-dom/client";
-    import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-    import App from "./App";
-    import "./index.css";
+    <Code lang="tsx" code={`import { StrictMode } from "react";
+import "./index.css";
 
-    const queryClient = new QueryClient();
+const queryClient = new QueryClient();
 
-    createRoot(document.getElementById("root")!).render(
-    <StrictMode>
-      <QueryClientProvider client={queryClient}>
+createRoot(document.getElementById("root")!).render(
+<StrictMode>
+    <QueryClientProvider client={queryClient}>
         <App />
-      </QueryClientProvider>
-    </StrictMode>,
-    );
-    ```
+    </QueryClientProvider>
+</StrictMode>,
+);`} />
 
     Replace `web/src/App.tsx`:
 
-    ```tsx
-    import { useGetApiUsers, useGetApiUsersUserId } from "./api/api";
+    <Code lang="tsx" code={`import { useGetApiUsers, useGetApiUsersUserId } from "./api/api";
 
-    export default function App() {
-    const { data: users, isLoading } = useGetApiUsers();
-    const { data: user } = useGetApiUsersUserId({ userId: "1" });
+export default function App() {
+const { data: users, isLoading } = useGetApiUsers();
+const { data: user } = useGetApiUsersUserId({ userId: "1" });
 
-    if (isLoading) return <p>Loading...</p>;
+if (isLoading) return <p>Loading...</p>;
 
-    return (
-      <main>
+return (
+    <main>
         <h1>Users</h1>
         <pre>{JSON.stringify(users)}</pre>
         <pre>{JSON.stringify(user)}</pre>
-      </main>
-    );
-    }
-    ```
+    </main>
+);
+}`} />
 
     The second hook takes a typed parameter object — the generator emitted a `GetApiUsersUserIdParams` interface with a `userId: string` field from the `{user_id}` path segment.
 
     Build the frontend to confirm everything type-checks:
 
-    ```bash
-    pnpm build
-    ```
+    <Code lang="bash" code={`pnpm build`} />
 
     You should see Vite finish without type errors. The generated hooks compile inside your app with no additional wiring: the client module is self-contained and handles headers, JSON parsing, 204 responses and error transformation itself.
 

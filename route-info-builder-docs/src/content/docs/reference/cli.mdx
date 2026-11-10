@@ -4,7 +4,7 @@ description: "The route-info-builder binary — sub-commands, flags, default fil
 type: reference
 ---
 
-import { Aside, LinkCard } from '@astrojs/starlight/components';
+import { Aside, Code, LinkCard } from '@astrojs/starlight/components';
 
 This page describes the `route-info-builder` command-line interface. The binary ships as the crate's default `cli` feature; building the crate with `default-features = false` omits it. `--version` reports the crate version (`propagate_version` is enabled).
 
@@ -35,14 +35,12 @@ Overrides apply for the current invocation only; the TOML file is not modified.
 
 Loads the configuration, applies flag overrides, scans the controllers and writes every configured output, creating parent directories. Prints a summary listing each written artifact:
 
-```ansi
-Generated Rust link enum (2413 bytes).
+<Code lang="ansi" code={`Generated Rust link enum (2413 bytes).
   rust:      src/generated/links.rs
   typescript: frontend/src/api/client.ts
               frontend/src/api/api.ts
   openapi:   openapi.json
-  route map: routes.json
-```
+  route map: routes.json`} />
 
 Lines appear only for outputs that are configured (or overridden).
 

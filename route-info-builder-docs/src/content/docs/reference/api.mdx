@@ -4,7 +4,7 @@ description: "The public Rust API — functions, configuration types, scanned-da
 type: reference
 ---
 
-import { Aside, LinkCard } from '@astrojs/starlight/components';
+import { Aside, Code, LinkCard } from '@astrojs/starlight/components';
 
 This page describes the crate's public API as exported from the crate root (`route_info_builder::…`). The CLI is feature-gated and omitted here; see the [CLI reference](/reference/cli/).
 
@@ -99,13 +99,11 @@ Because the Rust enum, the TypeScript client and hooks, and the OpenAPI document
 
 Every generator implements the `CodeGenerator` trait:
 
-```rust
-pub trait CodeGenerator {
-  type Config;
-  type Output;
-  fn generate(routes: &[RouteInfo], config: &Self::Config) -> Result<Self::Output>;
-}
-```
+<Code lang="rust" code={`pub trait CodeGenerator {
+    type Config;
+    type Output;
+    fn generate(routes: &[RouteInfo], config: &Self::Config) -> Result<Self::Output>;
+}`} />
 
 | Generator | Config | Output |
 | :--- | :--- | :--- |

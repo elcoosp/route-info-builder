@@ -11,15 +11,15 @@
  */
 
 :root {
-        --sl-color-accent-low: hsl(30 70% 95%);
-        --sl-color-accent: hsl(30 70% 37%);
-        --sl-color-accent-high: hsl(24 65% 28%);
+        --sl-color-accent-low: hsl(0 30% 93%);
+        --sl-color-accent: hsl(0 30% 35%);
+        --sl-color-accent-high: hsl(0 30% 28%);
 }
 
 [data-theme='dark'] {
-        --sl-color-accent-low: hsl(28 50% 14%);
-        --sl-color-accent: hsl(32 75% 58%);
-        --sl-color-accent-high: hsl(34 85% 78%);
+        --sl-color-accent-low: hsl(0 30% 16%);
+        --sl-color-accent: hsl(0 30% 60%);
+        --sl-color-accent-high: hsl(0 30% 75%);
 }
 
 /*
@@ -34,3 +34,17 @@
         border-radius: 0.4rem;
         padding: 0.2rem;
 }
+
+/* hero-image-polish */
+/* Source PNG has an opaque cream background baked in (cannot be edited per
+   project rules — must stay byte-identical to /docs/logo.png). Round the
+   corners and add a shadow so it reads as an intentional card instead of
+   a mis-placed image with a square background. */
+.hero img {
+  border-radius: 1.25rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04);
+}
+[data-theme='dark'] .hero img {
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+

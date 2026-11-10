@@ -4,7 +4,7 @@ description: "Shape enum variant and parameter field names with NamingConfig, an
 type: how-to
 ---
 
-import { Aside, LinkCard } from '@astrojs/starlight/components';
+import { Aside, Code, LinkCard } from '@astrojs/starlight/components';
 
 This guide shows you how to control the names the generator produces: which method appears in them, which path prefix disappears from them, how they are cased, and what happens when two routes would produce the same variant name. URL paths are never affected — every naming key changes names only.
 
@@ -15,10 +15,8 @@ This guide shows you how to control the names the generator produces: which meth
 
 ## Shorten names by removing a path prefix
 
-```toml
-[naming]
-path_prefix_to_remove = "/api"
-```
+<Code lang="toml" code={`[naming]
+path_prefix_to_remove = "/api"`} />
 
 `GET /api/users` then produces the variant `GetUsers` while `to_path()` still returns `/api/users`. Prefix matching is segment-aware: removing `/user` does not touch a `/users` route.
 
@@ -26,20 +24,16 @@ path_prefix_to_remove = "/api"
 
 By default the method is part of every base name, which is why `GET /api/users` and `POST /api/users` become `GetApiUsers` and `PostApiUsers`. Remove it when your routes do not collide without it:
 
-```toml
-[naming]
-include_method_in_names = false
-```
+<Code lang="toml" code={`[naming]
+include_method_in_names = false`} />
 
 With collisions likely (one path, several verbs), prefer a [collision strategy](#resolve-name-collisions) over dropping the method.
 
 ## Change the casing
 
-```toml
-[naming]
+<Code lang="toml" code={`[naming]
 variant_case = "pascal" # enum variants, default
-field_case   = "snake"  # parameter fields, default
-```
+field_case   = "snake"  # parameter fields, default`} />
 
 Accepted spellings for both keys: `camel`/`camelCase`, `pascal`/`PascalCase`, `snake`/`snake_case`, `kebab`/`kebab-case`, `title`/`Title Case`, `lower`/`lowercase`, `upper`/`uppercase`. An unknown spelling falls back to the default for that key.
 
@@ -49,19 +43,15 @@ Accepted spellings for both keys: `camel`/`camelCase`, `pascal`/`PascalCase`, `s
 
 `convert_case` treats a digit as a word boundary by default, so `/api/v1/users` becomes `GetApiV_1Users` in pascal or `v_1` in snake case. Set the key to `false` to glue digits to the preceding word:
 
-```toml
-[naming]
-preserve_numbers = false # v1 not v_1
-```
+<Code lang="toml" code={`[naming]
+preserve_numbers = false # v1 not v_1`} />
 
 ## Add prefixes, suffixes and extra separators
 
-```toml
-[naming]
+<Code lang="toml" code={`[naming]
 variant_prefix  = "Api"    # ApiGetUsers
 variant_suffix  = "Route"  # GetUsersRoute
-word_separators = "+~"     # extra characters treated as word separators
-```
+word_separators = "+~"     # extra characters treated as word separators`} />
 
 `/`, `-`, `.` and `:` always act as separators; `word_separators` adds further characters on top of that set.
 
@@ -69,10 +59,8 @@ word_separators = "+~"     # extra characters treated as word separators
 
 Two routes can produce the same base name — for example `GET /users/deactivated` and a path parameter both mapping to `GetUsers`. Choose what the generator does:
 
-```toml
-[naming]
-collision_strategy = "skip" # skip | append-method | number
-```
+<Code lang="toml" code={`[naming]
+collision_strategy = "skip" # skip | append-method | number`} />
 
 | Strategy | Behavior |
 | :--- | :--- |
@@ -88,9 +76,7 @@ collision_strategy = "skip" # skip | append-method | number
 
 Rebuild or re-run `route-info-builder generate`, then search the generated Rust file for your variants:
 
-```bash
-rg "pub enum Link" -A 12 src/links.rs
-```
+<Code lang="bash" code={`rg "pub enum Link" -A 12 src/links.rs`} />
 
 <Aside type="note">
   `name()` on every variant returns the camelCase form of the same name the TypeScript client uses as its method key. Renaming variants therefore renames the client methods and the TanStack Query keys with them.

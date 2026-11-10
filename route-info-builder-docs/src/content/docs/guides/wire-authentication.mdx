@@ -4,7 +4,7 @@ description: "Make the generated TypeScript client attach a bearer token to rout
 type: how-to
 ---
 
-import { Aside, LinkCard } from '@astrojs/starlight/components';
+import { Aside, Code, LinkCard } from '@astrojs/starlight/components';
 
 This guide shows you how to connect the generated client to your frontend's auth token, and how a route becomes authenticated in the first place. Without this configuration the client is anonymous: no auth import, no token lookup, no `Authorization` header.
 
@@ -17,23 +17,19 @@ This guide shows you how to connect the generated client to your frontend's auth
 
 Add the `auth` table to `[typescript]` in `route-info.toml`:
 
-```toml
-[typescript.auth]
+<Code lang="toml" code={`[typescript.auth]
 token_key_import = "TOKEN_KEY"       # constant name, default TOKEN_KEY
-import_from      = "@/hooks/use-auth"
-```
+import_from      = "@/hooks/use-auth"`} />
 
 `import_from` is what switches the client from anonymous to authenticated: it names the module the constant is imported from. The generated `client.ts` then contains:
 
-```typescript
-import { TOKEN_KEY } from "@/hooks/use-auth";
+<Code lang="typescript" code={`import { TOKEN_KEY } from "@/hooks/use-auth";
 
 export const apiClient = new ApiClient({
-  getToken: async () => {
-    return localStorage.getItem(TOKEN_KEY);
-  },
-});
-```
+    getToken: async () => {
+        return localStorage.getItem(TOKEN_KEY);
+    },
+});`} />
 
 Omit `[typescript.auth]` entirely to generate the anonymous client — for public APIs or when you wire the token elsewhere.
 
@@ -41,22 +37,18 @@ Omit `[typescript.auth]` entirely to generate the anonymous client — for publi
 
 The scanner marks a route as requiring authentication when its handler declares an extractor parameter named `auth` of type `JWT`:
 
-```rust
-async fn get_profile(auth: JWT) -> Response {
-  // ...
-}
-```
+<Code lang="rust" code={`async fn get_profile(auth: JWT) -> Response {
+    // ...
+}`} />
 
 The generated method for that route passes `requiresAuth: true` to the client. At request time the client awaits `getToken()` and sets the header when a token exists:
 
-```typescript
-if (options.requiresAuth && this.getToken) {
-  const token = await this.getToken();
-  if (token) {
-    headers.set("Authorization", "Bearer " + token);
-  }
-}
-```
+<Code lang="typescript" code={`if (options.requiresAuth && this.getToken) {
+    const token = await this.getToken();
+    if (token) {
+        headers.set("Authorization", "Bearer " + token);
+    }
+}`} />
 
 Routes whose handlers take no `auth: JWT` parameter pass `requiresAuth: false` — the client sends no `Authorization` header for them even when a token exists.
 
@@ -64,10 +56,8 @@ Routes whose handlers take no `auth: JWT` parameter pass `requiresAuth: false` �
 
 Regenerate and check both sides:
 
-```bash
-route-info-builder generate
-rg "TOKEN_KEY|requiresAuth" frontend/src/api/client.ts
-```
+<Code lang="bash" code={`route-info-builder generate
+rg "TOKEN_KEY|requiresAuth" frontend/src/api/client.ts`} />
 
 You should see the import, the `getToken` wiring, and `requiresAuth: true` on exactly the routes whose handlers take the extractor.
 

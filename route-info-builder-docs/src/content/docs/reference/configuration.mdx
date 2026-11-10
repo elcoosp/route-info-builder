@@ -4,7 +4,7 @@ description: "Every key of route-info.toml and the Config struct — type, defau
 type: reference
 ---
 
-import { Aside, LinkCard } from '@astrojs/starlight/components';
+import { Aside, Code, LinkCard } from '@astrojs/starlight/components';
 
 This page describes every configuration key accepted by `route-info.toml` and the equivalent `Config` struct. Missing fields fall back to their defaults; unknown keys are rejected with an `invalid configuration:` error, so typos surface immediately.
 
@@ -84,8 +84,7 @@ Both files are written only when `generate_client` is enabled **and** `output_pa
 
 ## Full example
 
-```toml
-controllers_path = "src/controllers"
+<Code lang="toml" code={`controllers_path = "src/controllers"
 controllers_fn   = "routes"
 
 [naming]
@@ -121,8 +120,7 @@ title       = "My API"
 version     = "0.1.0"
 
 [route_map]
-output_path = "routes.json"
-```
+output_path = "routes.json"`} />
 
 <Aside type="caution">
   Unknown keys anywhere in the file — top level or inside a table — are rejected: `invalid configuration: unknown field …`. The same applies to unknown `[naming]` keys and to a `collision_strategy` value outside the three accepted spellings.

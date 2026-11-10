@@ -4,7 +4,7 @@ description: "The exact JSON shape of a scanned route record, as printed by scan
 type: reference
 ---
 
-import { Aside, LinkCard } from '@astrojs/starlight/components';
+import { Aside, Code, LinkCard } from '@astrojs/starlight/components';
 
 This page describes the JSON route map: the serializable form of every scanned `RouteInfo`. The same records appear in two places — the stdout of `route-info-builder scan` and the file written when `route_map.output_path` is configured. Serialization is pretty-printed JSON with camelCase keys.
 
@@ -38,8 +38,7 @@ This page describes the JSON route map: the serializable form of every scanned `
 
 ## Example record
 
-```json
-{
+<Code lang="json" code={`{
   "name": "get_api_users_user_id",
   "path": "/api/users/{user_id}",
   "method": "GET",
@@ -55,8 +54,7 @@ This page describes the JSON route map: the serializable form of every scanned `
       "errorVariants": ["BadRequest::EmailAlreadyExists"]
     }
   }
-}
-```
+}`} />
 
 ## Determinism
 

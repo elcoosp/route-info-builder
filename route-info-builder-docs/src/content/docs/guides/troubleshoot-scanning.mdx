@@ -4,7 +4,7 @@ description: "Fix the four documented failure modes — routes not found, droppe
 type: how-to
 ---
 
-import { Aside, LinkCard } from '@astrojs/starlight/components';
+import { Aside, Code, LinkCard } from '@astrojs/starlight/components';
 
 This guide shows you how to diagnose and fix each failure mode the scanner documents. Work through the symptom that matches your build output.
 
@@ -16,24 +16,20 @@ Check the four rules the scanner applies when collecting routes:
 
 1. **Function name.** Only a function named `routes` is read. A controller whose builder function is called something else is invisible until you say so:
 
-    ```toml
-    controllers_fn = "api_routes"
-    ```
+    <Code lang="toml" code={`controllers_fn = "api_routes"`} />
 
 2. **File name.** `mod.rs` files and dot-files are skipped; only `*.rs` files are considered (case-insensitive extension). Rename `mod.rs` content into a regular file such as `users.rs`.
 
 3. **Statement shape.** Registration calls must appear as expressions in the function body — one chained expression or one statement per call. Routes built across `let` bindings and only returned at the end are not seen. Rewrite as a statement chain:
 
-    ```rust
-    // Not seen: the router is assembled across let bindings.
-    let router = Router::new();
-    let router = router.route("/api/users", get(list_users));
-    router
+    <Code lang="rust" code={`// Not seen: the router is assembled across let bindings.
+let router = Router::new();
+let router = router.route("/api/users", get(list_users));
+router
 
-    // Seen: each registration is its own statement expression.
-    let router = Router::new();
-    router.route("/api/users", get(list_users))
-    ```
+// Seen: each registration is its own statement expression.
+let router = Router::new();
+router.route("/api/users", get(list_users))`} />
 
 4. **Path syntax.** Both `{param}` and legacy `:param` are understood and canonicalized, so a legacy route still appears — but under its canonical form (`/items/{item_id}`).
 
