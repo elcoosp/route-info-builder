@@ -1,19 +1,35 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import astroTakumi from 'astro-takumi';
+import fs from 'node:fs';
+import { makeRender } from './src/og-render.mjs';
 import linksValidator from 'starlight-links-validator';
 
+const __logoB64 = fs.readFileSync("./src/assets/logo.png").toString("base64");
+const __render = makeRender({
+  logoDataUrl: "data:image/png;base64," + __logoB64,
+  accentHex: "#743e3e",
+  accentHexA12: "#743e3e1a",
+  domain: "route-info-builder.vercel.app",
+  projectName: "Route Info Builder",
+});
+
 export default defineConfig({
+	vite: {
+		ssr: { external: ["jsdom", "astro-takumi"] },
+	},
+  site: 'https://route-info-builder.vercel.app',
         integrations: [
                 starlight({
+			routeMiddleware: "./src/routeData.ts",
                         title: 'Route Info Builder',
                         description:
                                 'Build-time route scanner for Axum-like frameworks: type-safe Rust link enums, TypeScript clients with TanStack Query hooks, OpenAPI 3.1 skeletons and JSON route maps.',
                         favicon: '/favicon.png',
                         customCss: ['./src/styles/custom.css'],
-                        logo: {
-                                src: './src/assets/logo.png',
-                        },
+
+                        logo: { src: './src/assets/logo.png' },
                         social: [
                                 {
                                         icon: 'github',
@@ -69,5 +85,16 @@ export default defineConfig({
                         },
                 }),
                 linksValidator(),
-        ],
+        
+		astroTakumi({
+			options: {
+				domBackend: "linkedom",
+				fonts: [fs.readFileSync("./node_modules/@fontsource/roboto/files/roboto-latin-400-normal.woff2")],
+				width: 1200,
+				height: 630,
+				format: "png",
+			},
+			render: __render,
+		}),
+	],
 });
