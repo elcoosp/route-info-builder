@@ -219,13 +219,13 @@ fn shape_and_names(path: &str) -> (String, Vec<String>) {
 }
 
 #[cfg(test)]
-#[allow(unused_imports)]
+#[expect(unused_imports)]
 mod tests {
     use std::path::Path;
 
     use super::{collect_controller_files, shape_and_names};
     use crate::configuration::Config;
-    #[allow(unused_imports)]
+    #[expect(unused_imports)]
     use crate::error::Error;
 
     /// Tests touch the filesystem, so they use a boxed error alias.
@@ -265,7 +265,7 @@ mod tests {
     #[cfg(unix)]
     fn unreadable_files_surface_read_errors() -> TestResult {
         #[cfg(unix)]
-    use std::os::unix::fs::PermissionsExt;
+        use std::os::unix::fs::PermissionsExt;
 
         let dir = tempfile::tempdir()?;
         let locked = dir.path().join("locked.rs");
