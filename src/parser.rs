@@ -225,6 +225,8 @@ mod tests {
 
     use super::{collect_controller_files, shape_and_names};
     use crate::configuration::Config;
+    #[allow(unused_imports)]
+    use crate::error::Error;
 
     /// Tests touch the filesystem, so they use a boxed error alias.
     type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
