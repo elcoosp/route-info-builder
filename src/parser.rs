@@ -282,6 +282,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "macos"))]
     fn non_utf8_file_names_are_skipped() -> TestResult {
         use std::os::unix::ffi::OsStrExt;
 
