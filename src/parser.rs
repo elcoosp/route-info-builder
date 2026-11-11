@@ -219,13 +219,11 @@ fn shape_and_names(path: &str) -> (String, Vec<String>) {
 }
 
 #[cfg(test)]
-#[expect(unused_imports)]
 mod tests {
     use std::path::Path;
 
     use super::{collect_controller_files, shape_and_names};
     use crate::configuration::Config;
-    #[expect(unused_imports)]
     use crate::error::Error;
 
     /// Tests touch the filesystem, so they use a boxed error alias.
