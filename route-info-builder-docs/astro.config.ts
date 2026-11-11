@@ -3,6 +3,7 @@ import linksValidator from 'starlight-links-validator';
 
 
 export default await defineDocsConfig({
+  changelog: { repo: 'elcoosp/route-info-builder' },
   site: 'https://route-info-builder.vercel.app',
   domain: 'route-info-builder.vercel.app',
   title: "Route Info Builder",
