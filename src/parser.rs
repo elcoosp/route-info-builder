@@ -224,6 +224,7 @@ mod tests {
 
     use super::{collect_controller_files, shape_and_names};
     use crate::configuration::Config;
+    #[cfg(unix)]
     use crate::error::Error;
 
     /// Tests touch the filesystem, so they use a boxed error alias.

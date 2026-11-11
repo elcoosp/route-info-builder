@@ -225,6 +225,7 @@ fn write_output(path: &Path, content: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use crate::error::Error;
     use std::path::Path;
 
