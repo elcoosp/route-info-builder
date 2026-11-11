@@ -261,7 +261,8 @@ mod tests {
 
     #[test]
     fn unreadable_files_surface_read_errors() -> TestResult {
-        use std::os::unix::fs::PermissionsExt;
+        #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
         let dir = tempfile::tempdir()?;
         let locked = dir.path().join("locked.rs");
