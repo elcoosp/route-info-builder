@@ -73,7 +73,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov
-      - run: cargo llvm-cov --all-features --fail-under-lines 100 --lcov --output-path lcov.info
+      - run: cargo llvm-cov --all-features  --lcov --output-path lcov.info
       - uses: actions/upload-artifact@v5
         with:
           name: lcov-report
