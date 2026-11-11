@@ -219,6 +219,7 @@ fn shape_and_names(path: &str) -> (String, Vec<String>) {
 }
 
 #[cfg(test)]
+#[allow(unused_imports)]
 mod tests {
     use std::path::Path;
 

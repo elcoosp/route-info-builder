@@ -224,6 +224,7 @@ fn write_output(path: &Path, content: &str) -> Result<()> {
 }
 
 #[cfg(test)]
+#[allow(unused_imports)]
 mod tests {
     use std::path::Path;
 
