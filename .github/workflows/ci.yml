@@ -52,7 +52,9 @@ jobs:
             os: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@${{ matrix.rust }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust }}
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.rust }}-${{ matrix.os }}
