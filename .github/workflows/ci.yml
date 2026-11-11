@@ -89,13 +89,3 @@ jobs:
       - run: cargo package --all-features --allow-dirty
       - run: cargo doc --all-features --no-deps
 
-  semver-checks:
-    name: Semver checks
-    runs-on: ubuntu-latest
-    continue-on-error: true # informational while the crate is 0.x
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: obi1kenobi/cargo-semver-checks-action@v2
-        with:
-          feature-group: default-features
