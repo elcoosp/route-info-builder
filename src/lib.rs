@@ -229,7 +229,6 @@ mod tests {
     use std::path::Path;
 
     use crate::configuration::{Config, RustConfig};
-    use crate::error::Error;
 
     /// Tests touch the filesystem, so they use a boxed error alias.
     type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
