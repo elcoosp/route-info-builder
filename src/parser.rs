@@ -260,6 +260,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn unreadable_files_surface_read_errors() -> TestResult {
         #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
