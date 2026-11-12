@@ -7,7 +7,7 @@ description = "Build-time route scanner for Axum-like frameworks: generates type
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/elcoosp/route-info-builder"
-keywords = ["axum", "routes", "codegen", "typescript", "openapi"]
+keywords = ["http", "router", "web", "axum", "route"]
 categories = ["development-tools", "web-programming"]
 include = ["/src", "/tests", "/docs", "/README.md", "/LICENSE-MIT", "/CHANGELOG.md", "/cliff.toml"]
 
