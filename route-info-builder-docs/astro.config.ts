@@ -17,7 +17,7 @@ export default await defineDocsConfig({
                         social: [
                                 {
                                         icon: 'github',
-                                        label: 'GitHub',
+                                        label: 'GitHub', translations: { fr: "GitHub" },
                                         href: 'https://github.com/elcoosp/route-info-builder'
                                 },
                         ],
