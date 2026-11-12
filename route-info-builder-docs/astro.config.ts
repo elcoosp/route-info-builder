@@ -1,7 +1,9 @@
 import { defineDocsConfig } from '@elcoosp/docs-toolkit/config';
+import starlightChangelogs from 'starlight-changelogs';
 import linksValidator from 'starlight-links-validator';
 
 export default await defineDocsConfig({
+  plugins: [starlightChangelogs()],
   llmsTxt: {},
   changelog: { repo: 'elcoosp/route-info-builder' },
   site: 'https://route-info-builder.vercel.app',
