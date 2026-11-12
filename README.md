@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/logo.png" alt="Route Info Builder Logo" width="300"/>
+  <img src="https://cdn.jsdelivr.net/gh/elcoosp/route-info-builder@main/docs/logo.png" alt="Route Info Builder Logo" width="300"/>
   <p>
     <strong>Route Info Builder</strong><br/>
     A build-time route scanner for Axum-like frameworks: type-safe Rust link
@@ -7,7 +7,7 @@
     skeleton and a JSON route map — all from your existing controller files.
   </p>
   <p>
-    <a href="https://github.com/elcoosp/route-info-builder/actions/workflows/ci.yml"><img src="https://github.com/elcoosp/route-info-builder/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+    <a href="https://github.com/elcoosp/route-info-builder/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/elcoosp/route-info-builder/ci.yml?style=flat-square&label=build" alt="CI"/></a>
     <img src="https://img.shields.io/badge/MSRV-1.88%20%7C%202024-000000?style=flat-square&logo=rust" alt="MSRV"/>
     <img src="https://img.shields.io/crates/v/route-info-builder?style=flat-square" alt="Crates.io"/>
     <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License MIT"/>
@@ -290,6 +290,3 @@ cargo llvm-cov --all-features --fail-under-lines 100
 CI runs all of the above on stable plus the 1.88 MSRV; releases are cut with
 [git-cliff](https://git-cliff.org) changelogs (see `.github/workflows`).
 
-## License
-
-MIT — see [LICENSE-MIT](LICENSE-MIT).
