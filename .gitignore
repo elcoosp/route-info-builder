@@ -8,3 +8,5 @@ routes.json
 
 # Local helper: one conventional commit per file (not part of the history)
 commit.sh
+.vercel
+.env*
