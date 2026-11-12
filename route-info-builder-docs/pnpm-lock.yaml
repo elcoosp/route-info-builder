@@ -12,8 +12,8 @@ importers:
         specifier: ^0.42.10
         version: 0.42.10(@astrojs/markdown-remark@7.3.8)(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(typescript@6.0.3)
       '@elcoosp/docs-toolkit':
-        specifier: ^0.5.17
-        version: 0.5.17(@astrojs/markdown-satteri@0.4.9)(@astrojs/starlight@0.42.10(@astrojs/markdown-remark@7.3.8)(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(typescript@6.0.3))(@types/node@24.19.2)(astro-takumi@https://codeload.github.com/elcoosp/astro-takumi/tar.gz/4bb9e47833c48388b17da9612d77bc9f600d525e(csstype@3.2.3)(linkedom@0.18.15))(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(mermaid@11.17.2)(playwright@1.65.0)(react@19.3.1)
+        specifier: file:../../docs-toolkit
+        version: file:../../docs-toolkit(@astrojs/markdown-satteri@0.4.9)(@astrojs/starlight@0.42.10(@astrojs/markdown-remark@7.3.8)(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(typescript@6.0.3))(@types/node@24.19.2)(astro-takumi@https://codeload.github.com/elcoosp/astro-takumi/tar.gz/4bb9e47833c48388b17da9612d77bc9f600d525e(csstype@3.2.3)(linkedom@0.18.15))(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(mermaid@11.17.2)(playwright@1.65.0)(react@19.3.1)
       astro:
         specifier: ^7.4.7
         version: 7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)
@@ -26,6 +26,9 @@ importers:
       sharp:
         specifier: ^0.35.5
         version: 0.35.5(@types/node@24.19.2)
+      starlight-blog:
+        specifier: ^0.30.2
+        version: 0.30.2(@astrojs/markdown-satteri@0.4.9)(@astrojs/starlight@0.42.10(@astrojs/markdown-remark@7.3.8)(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(typescript@6.0.3))(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
       starlight-changelogs:
         specifier: ^0.7.1
         version: 0.7.1(@astrojs/starlight@0.42.10(@astrojs/markdown-remark@7.3.8)(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(typescript@6.0.3))(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
@@ -365,9 +368,8 @@ packages:
     resolution: {integrity: sha512-6V0+8vw/GmH92URQ/Ki12FPhoB3nqaQUJE+5xgbFbB5ok0OXYK5jCQsQQoyR3BzCddHsCpyCFRnIcI1PSOVYkQ==}
     engines: {node: '>=14'}
 
-  '@elcoosp/docs-toolkit@0.5.17':
-    resolution: {integrity: sha512-zJ0Mudl0paazbck9avHENQ5lNwJ1ZxueTuUycfrGFpBVrhx1ZIgD8XqiMegAinCOAVqNCdf5ubYbtOC40KqoCQ==}
-    version: 0.5.17
+  '@elcoosp/docs-toolkit@file:../../docs-toolkit':
+    resolution: {directory: ../../docs-toolkit, type: directory}
     engines: {node: '>=22.18.0'}
     hasBin: true
     peerDependencies:
@@ -2825,6 +2827,12 @@ packages:
     peerDependencies:
       '@astrojs/starlight': '>=0.41.0'
 
+  starlight-image-zoom@0.16.2:
+    resolution: {integrity: sha512-TF3TGjkb3d8hsYE5Hr09vTVAG0SsozNGQRy0Xy29zHqxNZVorrnE7CsddO98M6NA1KbKg4p2sNrCq59COLL80A==}
+    peerDependencies:
+      '@astrojs/starlight': '>=0.42.0'
+      astro: '>=7.2.10'
+
   starlight-seo@1.0.0:
     resolution: {integrity: sha512-mNVRuSkFEJOc1bBBaes34YPBSY4+ls+BFHFsoz5So4zL9UEnOlWJiw7nh6VpTTTjsTsQ1RSSn1dG/9mGoChWYQ==}
     engines: {node: '>=20'}
@@ -3660,7 +3668,7 @@ snapshots:
 
   '@ctrl/tinycolor@4.3.0': {}
 
-  '@elcoosp/docs-toolkit@0.5.17(@astrojs/markdown-satteri@0.4.9)(@astrojs/starlight@0.42.10(@astrojs/markdown-remark@7.3.8)(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(typescript@6.0.3))(@types/node@24.19.2)(astro-takumi@https://codeload.github.com/elcoosp/astro-takumi/tar.gz/4bb9e47833c48388b17da9612d77bc9f600d525e(csstype@3.2.3)(linkedom@0.18.15))(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(mermaid@11.17.2)(playwright@1.65.0)(react@19.3.1)':
+  '@elcoosp/docs-toolkit@file:../../docs-toolkit(@astrojs/markdown-satteri@0.4.9)(@astrojs/starlight@0.42.10(@astrojs/markdown-remark@7.3.8)(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(typescript@6.0.3))(@types/node@24.19.2)(astro-takumi@https://codeload.github.com/elcoosp/astro-takumi/tar.gz/4bb9e47833c48388b17da9612d77bc9f600d525e(csstype@3.2.3)(linkedom@0.18.15))(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(mermaid@11.17.2)(playwright@1.65.0)(react@19.3.1)':
     dependencies:
       '@astrojs/rss': 4.0.19
       '@astrojs/starlight': 0.42.10(@astrojs/markdown-remark@7.3.8)(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(typescript@6.0.3)
@@ -3674,6 +3682,7 @@ snapshots:
       starlight-blog: 0.30.2(@astrojs/markdown-satteri@0.4.9)(@astrojs/starlight@0.42.10(@astrojs/markdown-remark@7.3.8)(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(typescript@6.0.3))(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
       starlight-changelogs: 0.7.1(@astrojs/starlight@0.42.10(@astrojs/markdown-remark@7.3.8)(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(typescript@6.0.3))(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
       starlight-giscus: 1.2.0(@astrojs/starlight@0.42.10(@astrojs/markdown-remark@7.3.8)(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(typescript@6.0.3))
+      starlight-image-zoom: 0.16.2(@astrojs/starlight@0.42.10(@astrojs/markdown-remark@7.3.8)(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(typescript@6.0.3))(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
       starlight-seo: 1.0.0(@astrojs/starlight@0.42.10(@astrojs/markdown-remark@7.3.8)(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(typescript@6.0.3))(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))
       tsx: 4.23.15
     optionalDependencies:
@@ -6679,6 +6688,18 @@ snapshots:
   starlight-giscus@1.2.0(@astrojs/starlight@0.42.10(@astrojs/markdown-remark@7.3.8)(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(typescript@6.0.3)):
     dependencies:
       '@astrojs/starlight': 0.42.10(@astrojs/markdown-remark@7.3.8)(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(typescript@6.0.3)
+
+  starlight-image-zoom@0.16.2(@astrojs/starlight@0.42.10(@astrojs/markdown-remark@7.3.8)(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(typescript@6.0.3))(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)):
+    dependencies:
+      '@astrojs/starlight': 0.42.10(@astrojs/markdown-remark@7.3.8)(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(typescript@6.0.3)
+      astro: 7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)
+      mdast-util-mdx-jsx: 3.2.1
+      rehype-raw: 7.0.0
+      satteri: 0.10.5
+      unist-util-visit: 5.2.0
+      unist-util-visit-parents: 6.1.0
+    transitivePeerDependencies:
+      - supports-color
 
   starlight-seo@1.0.0(@astrojs/starlight@0.42.10(@astrojs/markdown-remark@7.3.8)(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1))(typescript@6.0.3))(astro@7.4.11(@astrojs/markdown-remark@7.3.8)(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)):
     dependencies:
