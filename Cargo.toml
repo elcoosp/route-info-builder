@@ -1,4 +1,6 @@
 [package]
+documentation = "https://route-info-builder.vercel.app"
+
 name = "route-info-builder"
 version = "0.2.0"
 edition = "2024"
