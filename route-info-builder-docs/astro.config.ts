@@ -1,7 +1,6 @@
 import { defineDocsConfig } from '@elcoosp/docs-toolkit/config';
 import linksValidator from 'starlight-links-validator';
 
-
 export default await defineDocsConfig({
   llmsTxt: {},
   changelog: { repo: 'elcoosp/route-info-builder' },
@@ -25,11 +24,8 @@ export default await defineDocsConfig({
                         editLink: {
                                 baseUrl: 'https://github.com/elcoosp/route-info-builder/edit/main/'
                         },
-                        defaultLocale: 'root',
-                        locales: {
-                                root: { label: 'English', lang: 'en' }
-                        },
-                        // The 404 page is a content page (src/content/docs/404.md) rendered
+
+                                                // The 404 page is a content page (src/content/docs/404.md) rendered
                         // through the [...slug] route; Starlight's injected 404 route is
                         // disabled to avoid the two routes conflicting.
                         disable404Route: true,
