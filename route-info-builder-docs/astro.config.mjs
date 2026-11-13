@@ -29,11 +29,11 @@ export default await defineDocsConfig({
                         disable404Route: true,
                         sidebar: [
                                 {
-                                        label: 'Tutorials', translations: { fr: 'Tutoriels' },
+                                        label: 'Tutorials',
                                         items: ['tutorials/getting-started']
                                 },
                                 {
-                                        label: 'How-to guides', translations: { fr: 'Guides pratiques' },
+                                        label: 'How-to guides',
                                         items: [
                                                 'guides/generate-from-cli',
                                                 'guides/configure-naming',
@@ -42,7 +42,7 @@ export default await defineDocsConfig({
                                         ]
                                 },
                                 {
-                                        label: 'Reference', translations: { fr: 'Référence' },
+                                        label: 'Reference',
                                         items: [
                                                 'reference/configuration',
                                                 'reference/cli',
@@ -51,7 +51,7 @@ export default await defineDocsConfig({
                                         ]
                                 },
                                 {
-                                        label: 'Explanation', translations: { fr: 'Explication' },
+                                        label: 'Explanation',
                                         items: [
                                                 'explanation/scanning-pipeline',
                                                 'explanation/naming-and-collisions',
