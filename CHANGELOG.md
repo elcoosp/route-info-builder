@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.2.1] - 2026-11-14
+
+### Documentation
+- add Vercel documentation link to Cargo.toml by @elcoosp ([6ea270b](https://github.com/elcoosp/route-info-builder/commit/6ea270b9ed8aca6c3cf49f7d8716ffe13583a4fe))
+- enforce SKILL.md rules (jsDelivr logos, absolute links, remove license sections) by @elcoosp ([f663238](https://github.com/elcoosp/route-info-builder/commit/f663238ec9e6bdd60ecaa3ac6fc1a77d6f1a02d9))
+
+### Miscellaneous
+- inject precisely curated keywords for crates.io by @elcoosp ([da20033](https://github.com/elcoosp/route-info-builder/commit/da20033ef09a6eb526402e2ae0d5434f13c11ae8))
+**Full Changelog**: https://github.com/elcoosp/route-info-builder/compare/v0.2.0...v0.2.1
+
 ## Bug Fixes
 
 
