@@ -1,0 +1,255 @@
+---
+title: "Premiers pas"
+description: "Générez une énumération de liens Rust typée et un client TypeScript typé avec hooks TanStack Query à partir d'un seul contrôleur Axum, puis appelez votre API des deux côtés."
+type: tutorial
+---
+
+import { Aside, Code, FileTree, LinkCard, Steps, TabItem, Tabs } from '@astrojs/starlight/components';
+
+Ce tutoriel vous emmène d'un projet Rust vide à des artefacts de routage générés et deux appels fonctionnels : un à travers l'énumération Rust `Link`, un à travers un hook TanStack Query en React. Il utilise l'intégration de script de build, qui régénère les artefacts à chaque compilation.
+
+**Prérequis**
+
+- Rust 1.88 ou plus récent (le MSRV de la crate).
+- Node.js 22+ et pnpm 10 pour la moitié frontend de ce tutoriel.
+- Aucune connaissance préalable de route-info-builder. L'environnement démarre proprement.
+
+<Steps>
+
+1. **Créer le projet Axum et un fichier de contrôleur.**
+
+    <Code lang="bash" code={`cargo new shop-api
+cd shop-api
+mkdir -p src/controllers`} />
+
+    Ajoutez les dépendances d'exécution à `Cargo.toml` :
+
+    <Code lang="toml" code={`[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+
+[build-dependencies]
+route-info-builder = "0.2"`} />
+
+    Créez le contrôleur `src/controllers/users.rs`. Le scanner recherche une fonction nommée `routes` à l'intérieur de chaque fichier `*.rs` sous votre dossier de contrôleurs :
+
+    <Code lang="rust" code={`use axum::routing::{get, post};
+use axum::Router;
+
+pub fn routes() -> Router {
+Router::new()
+    .route("/api/users", get(list_users))
+    .route("/api/users", post(create_user))
+    .route("/api/users/{user_id}", get(get_user))
+}
+
+async fn list_users() -> &'static str {
+"[]"
+}
+
+async fn create_user() -> &'static str {
+"created"
+}
+
+async fn get_user() -> &'static str {
+"user"
+}`} />
+
+    Votre projet ressemble maintenant à ceci :
+
+    <FileTree>
+    - shop-api
+        - src
+            - controllers
+                - users.rs
+            - main.rs
+        - Cargo.toml
+    </FileTree>
+
+2. **Écrire le script de build.**
+
+    Créez `build.rs` à la racine du projet. Chaque champ ci-dessous est une vraie clé de configuration ; `Config` implémente `Default`, donc vous ne définissez que ce dont vous avez besoin :
+
+    <Code lang="rust" code={`use route_info_builder::{Config, RustConfig, TypeScriptConfig};
+
+fn main() {
+let config = Config {
+    controllers_path: "src/controllers".into(),
+    rust: RustConfig {
+        output_file: Some("src/links.rs".into()),
+        ..RustConfig::default()
+    },
+    typescript: TypeScriptConfig {
+        generate_client: Some(true),
+        output_path: Some("../web/src/api".into()),
+        ..TypeScriptConfig::default()
+    },
+    ..Config::default()
+};
+
+route_info_builder::generate_links(&config).expect("failed to generate route links");
+}`} />
+
+    Cet appel unique scanne une fois, renvoie le code Rust généré, et écrit chaque sortie configurée sur disque, en créant les répertoires parents au besoin.
+
+3. **Générer les artefacts.**
+
+    <Code lang="bash" code={`cargo build`} />
+
+    Vous devriez maintenant voir les fichiers générés, et Cargo imprime la note du scanner au build à propos du client TypeScript :
+
+    <Code lang="ansi" code={`​warning: route-info-builder: generated TypeScript client at ../web/src/api`} />
+
+    Votre arbre contient maintenant trois fichiers générés :
+
+    <FileTree>
+    - shop-api
+        - src
+            - controllers
+                - users.rs
+            - links.rs
+            - main.rs
+        - build.rs
+        - Cargo.toml
+    </FileTree>
+
+    Ouvrez `src/links.rs`. Vous devriez voir une énumération avec une variante par route — la méthode fait partie du nom par défaut, et les paramètres de chemin deviennent des champs :
+
+    <Code lang="rust" code={`pub enum Link {
+GetApiUsers,
+PostApiUsers,
+GetApiUsersUserId { user_id: String },
+}`} />
+
+    Ouvrez `../web/src/api` (il n'existe pas encore, le script de build le crée) : vous devriez trouver `client.ts`, un client HTTP autonome avec méthodes typées, et `api.ts`, les hooks TanStack Query.
+
+4. **Utiliser l'énumération `Link` en Rust.**
+
+    Déclarez le module généré dans `src/main.rs` et essayez les trois méthodes que chaque variante porte :
+
+    <Code lang="rust" code={`mod links;
+
+use links::Link;
+
+#[tokio::main]
+async fn main() {
+let user_link = Link::GetApiUsersUserId { user_id: "123".to_string() };
+
+println!("Path: {}", user_link.to_path()); // /api/users/123
+println!("Method: {}", user_link.method()); // GET
+println!("Name: {}", user_link.name()); // getApiUsersUserId
+}`} />
+
+    Exécutez :
+
+    <Code lang="bash" code={`cargo run`} />
+
+    <Code lang="ansi" code={`Path: /api/users/123
+Method: GET
+Name: getApiUsersUserId`} />
+
+    `name()` renvoie la même clé que le client TypeScript utilise, ce qui garde les clés de requête synchronisées entre les deux langages.
+
+5. **Créer le frontend et installer TanStack Query.**
+
+    Dans un second terminal, toujours dans `shop-api`, échafaudez une application React dans `web/` :
+
+    <Tabs>
+    <TabItem label="pnpm">
+      <Code lang="bash" code={`pnpm create vite@latest web --template react-ts
+cd web
+pnpm install
+pnpm add @tanstack/react-query`} />
+    </TabItem>
+    <TabItem label="npm">
+      <Code lang="bash" code={`npm create vite@latest web -- --template react-ts
+cd web
+npm install
+npm install @tanstack/react-query`} />
+    </TabItem>
+    <TabItem label="yarn">
+      <Code lang="bash" code={`yarn create vite@latest web --template react-ts
+cd web
+yarn install
+yarn add @tanstack/react-query`} />
+    </TabItem>
+    </Tabs>
+
+6. **Appeler l'API avec les hooks générés.**
+
+    L'`api.ts` généré expose un hook par route : des hooks `useQuery` pour les routes GET et des hooks `useMutation` pour tout le reste. Remplacez le contenu de `web/src/main.tsx` :
+
+    <Code lang="tsx" code={`import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import App from "./App";
+import "./index.css";
+
+const queryClient = new QueryClient();
+
+createRoot(document.getElementById("root")!).render(
+<StrictMode>
+    <QueryClientProvider client={queryClient}>
+        <App />
+    </QueryClientProvider>
+</StrictMode>,
+);`} />
+
+    Remplacez `web/src/App.tsx` :
+
+    <Code lang="tsx" code={`import { useGetApiUsers, useGetApiUsersUserId } from "./api/api";
+
+export default function App() {
+const { data: users, isLoading } = useGetApiUsers();
+const { data: user } = useGetApiUsersUserId({ userId: "1" });
+
+if (isLoading) return <p>Loading...</p>;
+
+return (
+    <main>
+        <h1>Users</h1>
+        <pre>{JSON.stringify(users)}</pre>
+        <pre>{JSON.stringify(user)}</pre>
+    </main>
+);
+}`} />
+
+    Le second hook prend un objet de paramètres typé — le générateur a émis une interface `GetApiUsersUserIdParams` avec un champ `userId: string` issu du segment de chemin `{user_id}`.
+
+    Construisez le frontend pour confirmer que tout vérifie ses types :
+
+    <Code lang="bash" code={`pnpm build`} />
+
+    Vous devriez voir Vite se terminer sans erreurs de types. Les hooks générés compilent dans votre application sans câblage supplémentaire : le module client est autonome et gère les en-têtes, l'analyse JSON, les réponses 204 et la transformation d'erreur lui-même.
+
+    <Aside type="note">
+    Les hooks affichent ici des types de retour `any` parce que les handlers stub renvoient des chaînes brutes. Le scanner lit aussi les corps de handlers : les conversions `format::json(...)`, les extracteurs `Query<T>`, les corps de style `Json<T>` et les variantes d'erreur renvoyées deviennent tous des types TypeScript. Voir [Comment fonctionne le scan](/explanation/scanning-pipeline/).
+    </Aside>
+
+7. **Régénérer après changement de routes.**
+
+    Ajoutez une route à `users.rs`, ou un nouveau fichier de contrôleur, puis relancez `cargo build`. Le scan est déterministe — les fichiers sont visités dans l'ordre trié — donc la sortie ne change que quand vos routes changent.
+
+</Steps>
+
+<Aside type="tip">
+  Si `cargo build` rapporte qu'aucune route n'a été trouvée, vérifiez que vos fichiers ne s'appellent pas `mod.rs`, que la fonction s'appelle `routes`, et que les routes construites dans des variables locales sont enregistrées à travers des chaînes d'instructions. Le [guide de dépannage](/guides/troubleshoot-scanning/) couvre chaque mode d'échec connu.
+</Aside>
+
+## Étapes suivantes
+
+<LinkCard
+  title="Générer les artefacts depuis la CLI"
+  description="Sautez le script de build et pilotez la génération depuis la ligne de commande."
+  href="/guides/generate-from-cli/"
+/>
+<LinkCard
+  title="Configurer les noms générés"
+  description="Façonnez les noms de variantes et de champs, et résolvez les collisions."
+  href="/guides/configure-naming/"
+/>
+<LinkCard
+  title="Comment fonctionne le scan"
+  description="Comprenez le pipeline de la collecte de fichiers aux métadonnées de handler."
+  href="/explanation/scanning-pipeline/"
+/>

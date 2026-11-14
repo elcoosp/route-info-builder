@@ -1,0 +1,69 @@
+---
+title: "Dépanner le scan"
+description: "Corrigez les quatre modes d'échec documentés — routes non trouvées, doublons abandonnés, avertissements de paramètres incohérents et erreurs Parse."
+type: how-to
+---
+
+import { Aside, Code, LinkCard } from '@astrojs/starlight/components';
+
+Ce guide vous montre comment diagnostiquer et corriger chaque mode d'échec documenté par le scanner. Travaillez sur le symptôme qui correspond à votre sortie de build.
+
+## Routes non trouvées
+
+**Symptôme :** `cargo:warning: route-info-builder: no routes found under src/controllers`, ou certaines de vos routes manquent dans la sortie.
+
+Vérifiez les quatre règles que le scanner applique lors de la collecte des routes :
+
+1. **Nom de fonction.** Seule une fonction nommée `routes` est lue. Un contrôleur dont la fonction de builder s'appelle autrement est invisible jusqu'à ce que vous le déclariez :
+
+    <Code lang="toml" code={`controllers_fn = "api_routes"`} />
+
+2. **Nom de fichier.** Les fichiers `mod.rs` et les fichiers point sont sautés ; seuls les fichiers `*.rs` sont considérés (extension insensible à la casse). Renommez le contenu de `mod.rs` dans un fichier régulier tel que `users.rs`.
+
+3. **Forme d'instruction.** Les appels d'enregistrement doivent apparaître comme des expressions dans le corps de la fonction — une expression chaînée ou une instruction par appel. Les routes construites à travers des liaisons `let` et seulement renvoyées à la fin ne sont pas vues. Réécrivez en chaîne d'instructions :
+
+    <Code lang="rust" code={`// Non vu : le routeur est assemblé à travers des liaisons let.
+let router = Router::new();
+let router = router.route("/api/users", get(list_users));
+router
+
+// Vu : chaque enregistrement est sa propre instruction d'expression.
+let router = Router::new();
+router.route("/api/users", get(list_users))`} />
+
+4. **Syntaxe de chemin.** `{param}` et `:param` historique sont tous deux compris et canonicalisés, donc une route historique apparaît quand même — mais sous sa forme canonique (`/items/{item_id}`).
+
+## Routes disparues comme doublons
+
+**Symptôme :** messages `cargo:warning` sur les routes abandonnées ; une route déclarée deux fois n'existe qu'une seule fois dans la sortie.
+
+Les paires `(method, path)` en double sont abandonnées par conception — la première occurrence gagne, dans l'ordre fichier-trié, instruction. Retirez l'enregistrement en double, ou gardez les deux en faisant différer les chemins. Les collisions au niveau du nommage (même nom de variante, URLs différentes) sont un mécanisme distinct contrôlé par `collision_strategy` ; voir [Configurer les noms générés](/guides/configure-naming/).
+
+## Noms de paramètres incohérents
+
+**Symptôme :** un `cargo:warning` sur des noms de paramètres incohérents.
+
+Les routes qui partagent la même forme de chemin mais utilisent des noms de paramètres différents — `/items/{id}` dans un contrôleur et `/items/{item_id}` dans un autre — produisent cet avertissement. Les positions sont comparées indépendamment, donc l'avertissement pointe sur la position qui ne correspond pas. Alignez les noms ; les noms de champs générés suivent le propre segment de la route, donc des noms incohérents donnent aussi des paramètres TypeScript incohérents.
+
+## Build échoue avec une erreur Parse
+
+**Symptôme :** `failed to parse controller file \`src/controllers/users.rs\`` suivi de l'erreur de syntaxe.
+
+Chaque fichier `*.rs` collecté est analysé comme un AST Rust complet — y compris les fichiers qui ne contiennent aucune fonction `routes`. Tous les fichiers de contrôleurs doivent compiler comme du Rust valide en isolation. Retirez le contenu non-Rust du dossier de contrôleurs, ou pointez `controllers_path` sur un dossier qui ne contient que des contrôleurs Rust.
+
+<Aside type="caution">
+  Une erreur `Parse` est fatale : rien n'est généré tant que le fichier ne s'analyse pas. Le message d'erreur nomme le fichier ; la chaîne source `syn` nomme la ligne et la colonne.
+</Aside>
+
+## Étapes suivantes
+
+<LinkCard
+  title="Comment fonctionne le scan"
+  description="Le pipeline complet, de la collecte de fichiers aux métadonnées de handler."
+  href="/explanation/scanning-pipeline/"
+/>
+<LinkCard
+  title="Référence de l'API"
+  description="L'énumération Error et les fonctions de scan derrière ces symptômes."
+  href="/reference/api/"
+/>

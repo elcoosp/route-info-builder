@@ -1,0 +1,95 @@
+---
+title: "Générer les artefacts depuis la CLI"
+description: "Installez le binaire route-info-builder et produisez chaque artefact depuis la ligne de commande, avec des substitutions de sortie par invocation."
+type: how-to
+---
+
+import { Aside, Code, LinkCard } from '@astrojs/starlight/components';
+
+Ce guide vous montre comment produire l'énumération de liens Rust, le client et les hooks TypeScript, le squelette OpenAPI et la carte de routes JSON sans script de build. Utilisez-le pour une génération ponctuelle, des pipelines de CI, ou des chemins de sortie que vous pouvez substituer par invocation.
+
+**Préconditions**
+
+- `cargo` est dans votre `PATH`.
+- Un dossier de contrôleurs existe (par exemple `src/controllers`) et chaque fichier `*.rs` qu'il contient s'analyse comme du Rust valide.
+
+## Installer le binaire
+
+<Code lang="bash" code={`cargo install route-info-builder`} />
+
+Le binaire est une fonctionnalité par défaut de la crate. Les consommateurs de la bibliothèque qui n'en veulent jamais peuvent construire avec `default-features = false` pour retirer `clap` de l'arbre de dépendances.
+
+## Échafauder un fichier de configuration
+
+<Code lang="bash" code={`route-info-builder init`} />
+
+Vous devriez maintenant voir un `route-info.toml` dans le répertoire de travail contenant la configuration de démarrage. La commande refuse d'écraser un fichier existant ; passez `--force` quand vous voulez le remplacer :
+
+<Code lang="bash" code={`route-info-builder init --force`} />
+
+`init` accepte un chemin positionnel (par défaut `route-info.toml`). Éditez le fichier généré pour que `controllers_path` pointe sur votre dossier de contrôleurs — la valeur de démarrage est `src/controllers`.
+
+## Générer chaque sortie configurée
+
+<Code lang="bash" code={`route-info-builder generate`} />
+
+Vous devriez voir un résumé comme :
+
+<Code lang="ansi" code={`Generated Rust link enum (2413 bytes).
+  rust:      src/generated/links.rs
+  typescript: frontend/src/api/client.ts
+              frontend/src/api/api.ts
+  openapi:   openapi.json
+  route map: routes.json`} />
+
+Seules les sorties configurées dans votre fichier TOML apparaissent dans le résumé.
+
+## Substitution des sorties par invocation
+
+Chaque drapeau `generate` remplace la clé de configuration correspondante pour cette exécution, sans éditer le fichier TOML :
+
+| Drapeau | Remplace | Notes |
+| :--- | :--- | :--- |
+| `-c, --config <path>` | fichier de configuration utilisé | La recherche par défaut est `route-info.toml` dans le répertoire de travail. |
+| `--controllers <dir>` | `controllers_path` | |
+| `--rust-output <file>` | `rust.output_file` | |
+| `--ts-dir <dir>` | `typescript.output_path` | Implique `generate_client = true` pour cette exécution. |
+| `--openapi <file>` | `openapi.output_path` | |
+| `--route-map <file>` | `route_map.output_path` | |
+
+Par exemple, pour générer le client TypeScript dans un autre checkout sans toucher à la configuration :
+
+<Code lang="bash" code={`route-info-builder generate --ts-dir ../other-frontend/src/api`} />
+
+## Inspecter les routes scannées
+
+<Code lang="bash" code={`route-info-builder scan`} />
+
+Imprime la carte de routes JSON sur stdout — les mêmes enregistrements que `route_map.output_path` écrit sur disque. Redirigez-la dans l'outil de votre choix :
+
+<Code lang="bash" code={`route-info-builder scan | jq '.[].path'`} />
+
+<Aside type="caution">
+  Un scan échoue quand le dossier de contrôleurs ne peut pas être lu ou qu'un fichier de contrôleur n'est pas du Rust valide. Le message d'erreur nomme le fichier.
+</Aside>
+
+## Codes de sortie
+
+| Code | Signification |
+| :--- | :--- |
+| `0` | Commande réussie, ou `--help`/`--version` affichés. |
+| `1` | Échec d'exécution (chemins illisibles, TOML invalide, Rust invalide, sorties non inscriptibles). La CLI imprime `error:` plus une chaîne `caused by:`. |
+| `2` | Erreur d'usage (drapeau inconnu, sous-commande manquante). |
+
+## Étapes suivantes
+
+<LinkCard
+  title="Référence de la CLI"
+  description="Chaque sous-commande, drapeau et code de sortie dans un seul tableau."
+  href="/reference/cli/"
+/>
+<LinkCard
+  title="Référence de configuration"
+  description="Ce que contrôle chaque clé de route-info.toml."
+  href="/reference/configuration/"
+/>

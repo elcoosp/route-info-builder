@@ -1,0 +1,57 @@
+---
+title: "Nommage et collisions"
+description: "Comment un chemin d'URL devient un nom de variante d'énumération — les cinq étapes, la gestion des chiffres et des mots-clés, et les compromis de chaque stratégie de collision."
+type: explanation
+---
+
+import { Aside, LinkCard } from '@astrojs/starlight/components';
+
+Chaque artefact généré dépend d'une seule chaîne : le nom de route. La variante Rust `GetApiUsersUserId`, la méthode TypeScript `getApiUsersUserId`, la clé TanStack Query et la méthode `name()` sur l'énumération sont toutes des vues de cette même chaîne dans des casses différentes. Comprendre comment la chaîne est dérivée — et ce qui se passe quand deux routes dérivent la même — rend les clés de nommage prévisibles.
+
+## Étape 1 — retirer le préfixe de nom
+
+Si `path_prefix_to_remove` est défini, le préfixe est retiré du chemin *pour le nommage seulement*. Le retrait est conscient des segments : un préfixe configuré `/user` ne corrompt pas le nom d'une route `/users`, parce que `/user` doit correspondre à des segments entiers pour être retiré. L'URL conserve son préfixe dans tous les cas — la clé existe pour qu'un montage global `/api` ne pollue pas chaque nom de variante.
+
+## Étape 2 — nettoyer le chemin
+
+Le chemin nettoyé est construit en supprimant les accolades de paramètres (`{user_id}` contribue `user_id`), en transformant les séparateurs en soulignés, et en réduisant les suites de séparateurs. Le diviseur `/` et les caractères `-`, `.` et `:` agissent toujours comme séparateurs ; `word_separators` étend cet ensemble. Un chemin qui se nettoie en rien — la route racine — retombe sur le nom de base `root`.
+
+## Étape 3 — préfixer par la méthode
+
+Avec `include_method_in_names` activé (le défaut), la méthode HTTP en minuscules rejoint le nom de base avec un souligné avant qu'aucune casse ne soit appliquée : `get_api_users`. La méthode fait partie du nom par défaut précisément parce que deux verbes sur un même chemin sont courants, et un nom qui ignore la méthode entre immédiatement en collision à l'étape cinq.
+
+## Étape 4 — casse et assainissement
+
+Le nom joint est converti en `variant_case` (par défaut `pascal`) ou, pour les champs de paramètres, `field_case` (par défaut `snake`). Deux raffinements importent aux bords :
+
+- **Chiffres.** `convert_case` traite un chiffre comme une frontière de mot, donc `/api/v1/users` donne `v_1` en casse snake. Avec `preserve_numbers = false`, les chiffres restent collés au mot précédent — `v1` — au prix d'une casse légèrement moins régulière.
+- **Mots-clés.** Une route nommée `/match` produirait une variante appelée `Match`, qui est un mot-clé Rust. Plutôt que de paniquer, le générateur émet des identifiants bruts (`r#match`), et les noms de paramètres dégénérés retombent sur un traitement littéral.
+
+## Étape 5 — résoudre les collisions
+
+Les noms sont attribués par un teneur de registre qui se souvient de chaque nom déjà pris. Trois stratégies existent, et la différence entre elles est qui absorbe le coût d'une collision :
+
+- **`skip`** (le défaut) garde la première route et abandonne chaque doublon. Le coût est silencieux : la route disparaît de chaque artefact, laissant un `cargo:warning` comme seule trace. C'est le défaut parce qu'une route abandonnée est visible et diagnosticable, tandis qu'un nom mutilé se cache dans la sortie — mais c'est toujours avec perte, ce qui explique pourquoi la stratégie est configurable.
+- **`append-method`** préfixe la méthode HTTP au doublon, ce qui résout la classe de collision la plus courante — même chemin, verbes différents — sans perte, au prix de noms irréguliers pour les routes affectées.
+- **`number`** ajoute un compteur (`Users`, `Users2`, `Users3`), qui ne perd jamais de route mais produit des noms dont la relation à l'URL est purement positionnelle.
+
+<Aside type="note">
+  La résolution de collision opère sur les noms de variantes. Une vérification distincte, antérieure, abandonne les enregistrements `(method, path)` en double — la même route déclarée deux fois est une préoccupation de scan, pas de nommage, et aucune stratégie ne garde les deux copies.
+</Aside>
+
+## Pourquoi le nom est aussi la clé cliente
+
+Le côté TypeScript dérive ses noms de méthodes en camel-casant le même nom de base, et le fichier de hooks utilise la forme Pascal avec un préfixe `use`. `name()` sur l'énumération Rust renvoie aussi la forme camel. La parité est le point : une clé TanStack Query construite à partir de `name()` du côté Rust correspond à la clé qu'utilise le hook généré du côté TypeScript, ce qui rend possible l'invalidation de cache entre langages. Renommer via les clés de nommage renomme donc les deux mondes ensemble — il n'y a aucun moyen de renommer un seul côté.
+
+## Étapes suivantes
+
+<LinkCard
+  title="Configurer les noms générés"
+  description="Réglez les clés que ce pipeline consomme."
+  href="/guides/configure-naming/"
+/>
+<LinkCard
+  title="Comment fonctionne le scan"
+  description="D'où vient l'enregistrement de route avant le nommage."
+  href="/explanation/scanning-pipeline/"
+/>

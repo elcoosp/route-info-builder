@@ -1,0 +1,140 @@
+---
+title: "Référence de configuration"
+description: "Chaque clé de route-info.toml et de la struct Config — type, défaut, état requis et effet."
+type: reference
+---
+
+import { Aside, Code, LinkCard } from '@astrojs/starlight/components';
+
+Cette page décrit chaque clé de configuration acceptée par `route-info.toml` et la struct `Config` équivalente. Les champs manquants retombent sur leurs défauts ; les clés inconnues sont rejetées avec une erreur `invalid configuration:`, donc les fautes de frappe apparaissent immédiatement.
+
+Une configuration peut être chargée depuis un fichier TOML ou construite en code. `Config::load(None)` lit `route-info.toml` depuis le répertoire de travail quand il existe et renvoie les défauts sinon ; `Config::load(Some(path))` lit le fichier donné. Seule `controllers_path` n'a pas de défaut utilisable — chaque autre clé est optionnelle.
+
+## Clés de niveau supérieur
+
+| Clé | Type | Défaut | Effet |
+| :--- | :--- | :--- | :--- |
+| `controllers_path` | `string` (chemin) | — (effectivement requis) | Répertoire scanné récursivement pour les fichiers de contrôleurs. |
+| `controllers_fn` | `string` | `"routes"` | Nom de la fonction lue dans chaque fichier de contrôleur. |
+| `naming` | table | voir ci-dessous | Règles de nommage pour les noms générés. |
+| `rust` | table | voir ci-dessous | Options de l'énumération `Link` Rust. |
+| `typescript` | table | voir ci-dessous | Options du client et des hooks TypeScript. |
+| `openapi` | table | voir ci-dessous | Options du squelette OpenAPI 3.1. |
+| `route_map` | table | voir ci-dessous | Options de la carte de routes JSON. |
+
+## `[naming]`
+
+| Clé | Type | Défaut | Effet |
+| :--- | :--- | :--- | :--- |
+| `include_method_in_names` | `bool` | `true` | Préfixe le nom de base généré avec la méthode HTTP. |
+| `path_prefix_to_remove` | `string` | — | Préfixe de chemin retiré des noms générés. N'affecte jamais les chemins d'URL. Conscient des segments. |
+| `variant_case` | `string` | `"pascal"` | Casse des noms de variantes d'énumération. |
+| `field_case` | `string` | `"snake"` | Casse des champs de paramètres de route. |
+| `word_separators` | `string` | — | Caractères supplémentaires traités comme séparateurs de mots (`/`, `-`, `.`, `:` le sont toujours). |
+| `preserve_numbers` | `bool` | — | Quand `false`, les chiffres restent collés au mot précédent (`v1`, pas `v_1`). |
+| `variant_prefix` | `string` | `""` | Préfixe statique ajouté à chaque nom de variante. |
+| `variant_suffix` | `string` | `""` | Suffixe statique ajouté à chaque nom de variante. |
+| `collision_strategy` | `string` | `"skip"` | Ce qui se passe quand deux routes produisent le même nom de variante. |
+
+`collision_strategy` accepte `skip`, `append-method` ou `number` (kebab-case). `variant_case` et `field_case` acceptent `camel`, `pascal`, `snake`, `kebab`, `title`, `lower` et `upper` plus leurs graphies `…Case` ; une graphie inconnue retombe sur le défaut de la clé.
+
+## `[rust]`
+
+| Clé | Type | Défaut | Effet |
+| :--- | :--- | :--- | :--- |
+| `output_file` | `string` (chemin) | — | Quand défini, l'énumération générée est écrite dans ce fichier ; les répertoires parents sont créés. |
+| `enum_name` | `string` | `"Link"` | Nom de l'énumération générée. |
+| `derive_serde` | `bool` | `false` | Ajoute les dérivations `serde::Serialize`/`serde::Deserialize` à l'énumération. |
+
+L'énumération générée dérive toujours `Debug`, `Clone`, `PartialEq`, `Eq` et `Hash`, et implémente `to_path()`, `method()` et `name()`.
+
+## `[typescript]`
+
+| Clé | Type | Défaut | Effet |
+| :--- | :--- | :--- | :--- |
+| `generate_client` | `bool` | `false` | Génère les fichiers du client et des hooks. |
+| `output_path` | `string` (répertoire) | — | Répertoire recevant les deux fichiers. Requis pour la sortie. |
+| `client_file` | `string` | `"client.ts"` | Nom de fichier du client généré. |
+| `hooks_file` | `string` | `"api.ts"` | Nom de fichier des hooks générés. |
+| `bindings_path` | `string` | `"../../../bindings"` | Chemin de base d'import pour les types de bindings générés. |
+| `auth` | table | — | Plomberie d'authentification ; omettre pour un client anonyme. |
+
+Les deux fichiers ne sont écrits que quand `generate_client` est activé **et** `output_path` est défini.
+
+### `[typescript.auth]`
+
+| Clé | Type | Défaut | Effet |
+| :--- | :--- | :--- | :--- |
+| `token_key_import` | `string` | `"TOKEN_KEY"` | Nom de la constante de clé de jeton importée. |
+| `import_from` | `string` | — | Module depuis lequel la constante est importée. Sa présence bascule le client d'anonyme à authentifié. |
+
+## `[openapi]`
+
+| Clé | Type | Défaut | Effet |
+| :--- | :--- | :--- | :--- |
+| `output_path` | `string` (chemin) | — | Quand défini, un squelette OpenAPI 3.1 est écrit dans ce fichier. |
+| `title` | `string` | `"API"` | Titre de l'API utilisé dans le document. |
+| `version` | `string` | `"0.1.0"` | Version de l'API utilisée dans le document. |
+
+## `[route_map]`
+
+| Clé | Type | Défaut | Effet |
+| :--- | :--- | :--- | :--- |
+| `output_path` | `string` (chemin) | — | Quand défini, la carte de routes JSON est écrite dans ce fichier. |
+
+## Exemple complet
+
+<Code lang="toml" code={`controllers_path = "src/controllers"
+controllers_fn   = "routes"
+
+[naming]
+include_method_in_names = true
+path_prefix_to_remove   = "/api"
+variant_case            = "pascal"
+field_case              = "snake"
+word_separators         = "-."
+preserve_numbers        = false
+variant_prefix          = ""
+variant_suffix          = ""
+collision_strategy      = "skip"
+
+[rust]
+output_file  = "src/generated/links.rs"
+enum_name    = "Link"
+derive_serde = false
+
+[typescript]
+generate_client = true
+output_path     = "frontend/src/api"
+client_file     = "client.ts"
+hooks_file      = "api.ts"
+bindings_path   = "../../../bindings"
+
+[typescript.auth]
+token_key_import = "TOKEN_KEY"
+import_from      = "@/hooks/use-auth"
+
+[openapi]
+output_path = "openapi.json"
+title       = "My API"
+version     = "0.1.0"
+
+[route_map]
+output_path = "routes.json"`} />
+
+<Aside type="caution">
+  Les clés inconnues n'importe où dans le fichier — au niveau supérieur ou dans une table — sont rejetées : `invalid configuration: unknown field …`. Il en va de même pour les clés `[naming]` inconnues et pour une valeur `collision_strategy` hors des trois graphies acceptées.
+</Aside>
+
+## Étapes suivantes
+
+<LinkCard
+  title="Nommage et collisions expliqués"
+  description="Comment les clés de nommage interagissent, étape par étape."
+  href="/explanation/naming-and-collisions/"
+/>
+<LinkCard
+  title="Référence de la CLI"
+  description="Les drapeaux qui remplacent ces clés à chaque invocation."
+  href="/reference/cli/"
+/>

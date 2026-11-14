@@ -1,0 +1,96 @@
+---
+title: "Configurer les noms générés"
+description: "Façonnez les noms de variantes d'énumération et de champs de paramètres avec NamingConfig, et choisissez une stratégie de collision quand deux routes produisent le même nom."
+type: how-to
+---
+
+import { Aside, Code, LinkCard } from '@astrojs/starlight/components';
+
+Ce guide vous montre comment contrôler les noms que le générateur produit : quelle méthode y apparaît, quel préfixe de chemin en disparaît, comment ils sont cassés, et ce qui se passe quand deux routes produiraient le même nom de variante. Les chemins d'URL ne sont jamais affectés — chaque clé de nommage ne change que les noms.
+
+**Préconditions**
+
+- Un `route-info.toml` fonctionnel (ou un `Config` en code) avec `controllers_path` défini.
+- Les noms que vous voulez changer sont visibles dans un `links.rs` ou un `client.ts` généré.
+
+## Raccourcir les noms en retirant un préfixe de chemin
+
+<Code lang="toml" code={`[naming]
+path_prefix_to_remove = "/api"`} />
+
+`GET /api/users` produit alors la variante `GetUsers` tandis que `to_path()` renvoie toujours `/api/users`. La correspondance de préfixe est consciente des segments : retirer `/user` ne touche pas une route `/users`.
+
+## Retirer la méthode HTTP des noms
+
+Par défaut la méthode fait partie de chaque nom de base, ce qui explique pourquoi `GET /api/users` et `POST /api/users` deviennent `GetApiUsers` et `PostApiUsers`. Retirez-la quand vos routes n'entrent pas en collision sans elle :
+
+<Code lang="toml" code={`[naming]
+include_method_in_names = false`} />
+
+Avec des collisions probables (un chemin, plusieurs verbes), préférez une [stratégie de collision](#resolve-name-collisions) au retrait de la méthode.
+
+## Changer la casse
+
+<Code lang="toml" code={`[naming]
+variant_case = "pascal" # variantes d'énumération, par défaut
+field_case   = "snake"  # champs de paramètres, par défaut`} />
+
+Graphies acceptées pour les deux clés : `camel`/`camelCase`, `pascal`/`PascalCase`, `snake`/`snake_case`, `kebab`/`kebab-case`, `title`/`Title Case`, `lower`/`lowercase`, `upper`/`uppercase`. Une graphie inconnue retombe sur le défaut de cette clé.
+
+`GET /api/users/{user_id}` avec `field_case = "camel"` produit le champ `userId` au lieu de `user_id` — la même graphie que celle qu'utilise l'interface de paramètres TypeScript.
+
+## Garder les chiffres collés aux mots
+
+`convert_case` traite un chiffre comme une frontière de mot par défaut, donc `/api/v1/users` devient `GetApiV_1Users` en pascal ou `v_1` en casse snake. Réglez la clé sur `false` pour coller les chiffres au mot précédent :
+
+<Code lang="toml" code={`[naming]
+preserve_numbers = false # v1 pas v_1`} />
+
+## Ajouter préfixes, suffixes et séparateurs supplémentaires
+
+<Code lang="toml" code={`[naming]
+variant_prefix  = "Api"    # ApiGetUsers
+variant_suffix  = "Route"  # GetUsersRoute
+word_separators = "+~"     # caractères supplémentaires traités comme séparateurs de mots`} />
+
+`/`, `-`, `.` et `:` agissent toujours comme séparateurs ; `word_separators` ajoute d'autres caractères par-dessus cet ensemble.
+
+## Résoudre les collisions de noms
+
+Deux routes peuvent produire le même nom de base — par exemple `GET /users/deactivated` et un paramètre de chemin se mappant tous deux sur `GetUsers`. Choisissez ce que fait le générateur :
+
+<Code lang="toml" code={`[naming]
+collision_strategy = "skip" # skip | append-method | number`} />
+
+| Stratégie | Comportement |
+| :--- | :--- |
+| `skip` (défaut) | Garde la première route, abandonne chaque doublon, et émet un `cargo:warning` nommant la route sautée. |
+| `append-method` | Préfixe la méthode HTTP au doublon : `GetUsers` contre `PostUsers`. |
+| `number` | Ajoute un compteur au doublon : `Users`, `Users2`, `Users3`, ... |
+
+<Aside type="caution">
+  `skip` perd silencieusement des routes — la seule trace est un avertissement de build. Choisissez `append-method` ou `number` quand perdre une route est inacceptable, ou quand vos URLs ne diffèrent que d'une façon que le nom de base ne peut pas exprimer.
+</Aside>
+
+## Vérifier le résultat
+
+Reconstruisez ou relancez `route-info-builder generate`, puis cherchez vos variantes dans le fichier Rust généré :
+
+<Code lang="bash" code={`rg "pub enum Link" -A 12 src/links.rs`} />
+
+<Aside type="note">
+  `name()` sur chaque variante renvoie la forme camelCase du même nom que le client TypeScript utilise comme clé de méthode. Renommer les variantes renomme donc aussi les méthodes du client et les clés TanStack Query.
+</Aside>
+
+## Étapes suivantes
+
+<LinkCard
+  title="Nommage et collisions expliqués"
+  description="Les cinq étapes qui transforment un chemin d'URL en nom de variante."
+  href="/explanation/naming-and-collisions/"
+/>
+<LinkCard
+  title="Référence de configuration"
+  description="Types et défauts de chaque clé [naming]."
+  href="/reference/configuration/"
+/>

@@ -1,0 +1,55 @@
+---
+title: "Décisions de conception"
+description: "Les décisions et compromis consignés derrière route-info-builder 0.2.0, y compris les alternatives que les mainteneurs ont examinées et rejetées."
+type: explanation
+---
+
+import { Aside, LinkCard } from '@astrojs/starlight/components';
+
+La refonte 0.1.0 → 0.2.0 a laissé une trace écrite : les mainteneurs ont documenté chaque bogue, chaque changement de performance et chaque alternative rejetée dans le fichier `docs/IMPROVEMENTS.md` du dépôt. Cette page organise cette trace en décisions qui façonnent le comportement actuel de l'outil. Tout ce qui suit est sourcé dans ce document et dans le code qu'il décrit — là où la trace est muette, cette page le dit plutôt que d'attribuer des motivations.
+
+## Zéro dépendance lourde
+
+Le coût de compilation dominant de 0.1.0 était une chaîne de dépendances, pas le scanner : une dépendance de chemin sur `ts_quote` cassait le build pour les consommateurs externes, et `deno_ast` tirait l'arbre swc dans chaque build alors que le formatage TS qu'elle permettait était de toute façon un no-op. La 0.2.0 a abandonné les deux et émet du TypeScript comme de la construction de chaînes simples, entièrement testées, pré-formatées sans passe de formateur en aval. Le compromis est explicite : la crate a renoncé à un outillage pratique de manipulation TS en échange d'un build qui compile vite et fonctionne pour tout consommateur de la crate publiée.
+
+## Le déterminisme comme contrat
+
+Du code généré qui change entre deux exécutions érode la confiance dans un script de build, donc la 0.2.0 traite le déterminisme comme une propriété à concevoir plutôt qu'à observer : les fichiers de contrôleurs sont collectés récursivement et triés, l'ordre de `read_dir` ne fuit plus dans la sortie, et chaque collection qui atteint du code généré est un `BTreeMap`/`BTreeSet`. Le côté Rust est joliment imprimé une fois avec `prettyplease`, donc les projets obtiennent du code formaté sans ajouter `cargo fmt` à leur pipeline. Le bénéfice apparaît dans les diffs : les fichiers régénérés ne diffèrent que quand les routes ont réellement changé.
+
+## Le document OpenAPI est un squelette par conception
+
+Le scanner connaît les noms de types, pas les formes de types — c'est une propriété de l'analyse des signatures et des corps plutôt que de leur vérification de type. Générer de vrais JSON Schemas à partir de noms aurait été de la fiction, et les mainteneurs ont consigné exactement ce raisonnement quand ils ont rejeté la génération Zod et serde-JSON-schema. Le document OpenAPI référence à la place les noms de types collectés (`#/components/schemas/<Type>`) et documente honnêtement la même limitation : c'est un squelette destiné à alimenter l'outillage et à être complété à la main, pas une description complète de l'API.
+
+## Des erreurs typées avec contexte
+
+La 0.1.0 exposait les échecs comme des erreurs boxées qui perdaient le contexte du fichier et de la méthode, ce qui rendait les échecs de build difficiles à localiser. La 0.2.0 a introduit l'énumération typée `Error` portant chemins et chaînes de sources — chaque échec d'I/O nomme le fichier sur lequel il a échoué, et les échecs d'analyse portent l'erreur `syn` avec ligne et colonne. C'est une petite décision avec un gros bénéfice de débogage : la différence entre « le build a échoué » et « ce fichier, cette ligne » est généralement la différence entre un correctif rapide et une session d'archéologie.
+
+## Examinées et rejetées
+
+La trace conserve les alternatives, ce qui est souvent la partie la plus utile d'un document de conception :
+
+- **`walkdir`** — le parcours récursif de répertoire fait environ vingt lignes de code de bibliothèque standard ; une dépendance n'en valait pas la peine.
+- **Tests d'instantané (`insta`)** — les assertions à chaîne exacte gardent la surface de test explicite et évitent un flux de mise à jour d'instantanés pour une petite crate.
+- **Un builder `Router` généré** — enregistrer des handlers exige leurs chemins de module, que le scanner ne devine délibérément pas ; générer un builder aurait signifié inventer ces chemins ou produire du code qui ne compile pas.
+- **Le mode watch** — hors du périmètre d'un outil de script de build ; `cargo watch` couvre déjà le flux de travail.
+
+<Aside type="note">
+  Ce sont les raisons consignées par les mainteneurs eux-mêmes, pas une interprétation externe. Là où une justification n'est pas dans la trace, le comportement est présenté comme une observation sur le code, pas comme une intention.
+</Aside>
+
+## Ce que cela signifie pour vous
+
+Deux conséquences pratiques découlent des décisions ci-dessus. Premièrement, attendez-vous à ce que les artefacts générés soient complets et déterministes mais superficiels là où les types sont concernés — l'outil échange la profondeur de connaissance des types pour une fiabilité zéro-magie, et les types TypeScript que vous obtenez pour les corps de requête et de réponse valent ce que les noms révèlent de vos handlers. Deuxièmement, attendez-vous à ce que les échecs soient bruyants et localisés : entre l'analyse de configuration `deny_unknown_fields`, les erreurs d'analyse par fichier avec chemins, et les avertissements de build pour doublons et paramètres incohérents, la crate expose ses limites au build plutôt qu'à l'exécution.
+
+## Étapes suivantes
+
+<LinkCard
+  title="Comment fonctionne le scan"
+  description="Le pipeline que ces décisions ont produit."
+  href="/explanation/scanning-pipeline/"
+/>
+<LinkCard
+  title="Référence de l'API"
+  description="L'énumération Error typée en détail."
+  href="/reference/api/"
+/>

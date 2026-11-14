@@ -1,0 +1,87 @@
+---
+title: "Référence de la CLI"
+description: "Le binaire route-info-builder — sous-commandes, drapeaux, recherche de fichier par défaut et codes de sortie."
+type: reference
+---
+
+import { Aside, Code, LinkCard } from '@astrojs/starlight/components';
+
+Cette page décrit l'interface en ligne de commande de `route-info-builder`. Le binaire est livré comme fonctionnalité par défaut `cli` de la crate ; construire la crate avec `default-features = false` l'omet. `--version` rapporte la version de la crate (`propagate_version` est activé).
+
+## Commandes
+
+| Commande | Objet |
+| :--- | :--- |
+| `route-info-builder generate [flags]` | Génère l'énumération de liens Rust et chaque sortie configurée. |
+| `route-info-builder scan [flags]` | Imprime la carte de routes scannée en JSON sur stdout. |
+| `route-info-builder init [path] [--force]` | Écrit un `route-info.toml` de démarrage. |
+
+`generate` et `scan` acceptent les mêmes drapeaux.
+
+## Drapeaux de `generate` et `scan`
+
+| Drapeau | Type | Remplace |
+| :--- | :--- | :--- |
+| `-c, --config <path>` | chemin | Fichier de configuration utilisé au lieu de la recherche par défaut. |
+| `--controllers <dir>` | chemin | `controllers_path`. |
+| `--rust-output <file>` | chemin | `rust.output_file`. |
+| `--ts-dir <dir>` | chemin | `typescript.output_path` ; implique `generate_client = true` pour cette exécution. |
+| `--openapi <file>` | chemin | `openapi.output_path`. |
+| `--route-map <file>` | chemin | `route_map.output_path`. |
+
+Les substitutions s'appliquent pour l'invocation courante seulement ; le fichier TOML n'est pas modifié.
+
+## `generate`
+
+Charge la configuration, applique les substitutions de drapeaux, scanne les contrôleurs et écrit chaque sortie configurée, en créant les répertoires parents. Imprime un résumé listant chaque artefact écrit :
+
+<Code lang="ansi" code={`Generated Rust link enum (2413 bytes).
+  rust:      src/generated/links.rs
+  typescript: frontend/src/api/client.ts
+              frontend/src/api/api.ts
+  openapi:   openapi.json
+  route map: routes.json`} />
+
+Les lignes n'apparaissent que pour les sorties qui sont configurées (ou substituées).
+
+## `scan`
+
+Charge la configuration, applique les substitutions de drapeaux, scanne les contrôleurs et imprime la carte de routes JSON — joliment formatée, un enregistrement par route — sur stdout. Rien n'est écrit sur disque.
+
+## `init`
+
+| Argument / drapeau | Type | Défaut | Effet |
+| :--- | :--- | :--- | :--- |
+| `path` | positionnel | `route-info.toml` | Où la configuration de démarrage est écrite. |
+| `--force` | drapeau | — | Écrase un fichier existant. |
+
+Sans `--force`, `init` refuse d'écraser un fichier existant avec `refusing to overwrite <path> (pass --force to overwrite)` et sort avec `1`. Le contenu de démarrage correspond au nom de fichier de configuration par défaut et couvre `controllers_path`, `[rust]`, `[typescript]`, `[openapi]` et `[route_map]`.
+
+## Recherche de la configuration par défaut
+
+Sans drapeau `--config`, `generate` et `scan` utilisent `route-info.toml` dans le répertoire de travail quand il existe et retombent sur les défauts intégrés sinon. Un chemin `--config` explicite qui n'existe pas est une erreur.
+
+## Codes de sortie
+
+| Code | Signification |
+| :--- | :--- |
+| `0` | Succès, y compris `--help` et `--version`. |
+| `1` | Échec d'exécution : chemins illisibles, TOML invalide, Rust invalide, sorties non inscriptibles. La CLI imprime `error:` suivi d'une chaîne `caused by:`. |
+| `2` | Erreur d'usage : drapeau inconnu, sous-commande manquante, arguments non analysables. |
+
+<Aside type="caution">
+  Le code de sortie `2` est réservé aux échecs d'analyse d'arguments. Les scripts qui distinguent « mauvaise invocation » de « génération échouée » devraient matcher sur ce code.
+</Aside>
+
+## Étapes suivantes
+
+<LinkCard
+  title="Référence de configuration"
+  description="Ce que contrôle chaque clé substituée."
+  href="/reference/configuration/"
+/>
+<LinkCard
+  title="Carte de routes JSON"
+  description="Les enregistrements exacts que `scan` imprime."
+  href="/reference/route-info-json/"
+/>

@@ -1,0 +1,83 @@
+---
+title: "Câbler l'authentification dans le client généré"
+description: "Faites attacher un jeton bearer par le client TypeScript généré aux routes dont le handler prend un extracteur auth: JWT."
+type: how-to
+---
+
+import { Aside, Code, LinkCard } from '@astrojs/starlight/components';
+
+Ce guide vous montre comment connecter le client généré au jeton d'auth de votre frontend, et comment une route devient authentifiée en premier lieu. Sans cette configuration, le client est anonyme : pas d'import d'auth, pas de recherche de jeton, pas d'en-tête `Authorization`.
+
+**Préconditions**
+
+- Un module frontend qui peut résoudre le jeton, exportant (ou capable d'exporter) une constante contenant la clé du jeton — le code généré lit le jeton depuis `localStorage` sous cette clé.
+- Artefacts régénérés après chaque changement de configuration.
+
+## Configurer la plomberie d'auth
+
+Ajoutez la table `auth` à `[typescript]` dans `route-info.toml` :
+
+<Code lang="toml" code={`[typescript.auth]
+token_key_import = "TOKEN_KEY"       # nom de constante, par défaut TOKEN_KEY
+import_from      = "@/hooks/use-auth"`} />
+
+`import_from` est ce qui bascule le client d'anonyme à authentifié : il nomme le module depuis lequel la constante est importée. Le `client.ts` généré contient alors :
+
+<Code lang="typescript" code={`import { TOKEN_KEY } from "@/hooks/use-auth";
+
+export const apiClient = new ApiClient({
+    getToken: async () => {
+        return localStorage.getItem(TOKEN_KEY);
+    },
+});`} />
+
+Omettez entièrement `[typescript.auth]` pour générer le client anonyme — pour des API publiques ou quand vous câblez le jeton ailleurs.
+
+## Marquer les routes authentifiées dans le handler
+
+Le scanner marque une route comme exigeant l'authentification quand son handler déclare un paramètre extracteur nommé `auth` de type `JWT` :
+
+<Code lang="rust" code={`async fn get_profile(auth: JWT) -> Response {
+    // ...
+}`} />
+
+La méthode générée pour cette route passe `requiresAuth: true` au client. Au moment de la requête, le client attend `getToken()` et définit l'en-tête quand un jeton existe :
+
+<Code lang="typescript" code={`if (options.requiresAuth && this.getToken) {
+    const token = await this.getToken();
+    if (token) {
+        headers.set("Authorization", "Bearer " + token);
+    }
+}`} />
+
+Les routes dont les handlers ne prennent pas de paramètre `auth: JWT` passent `requiresAuth: false` — le client n'envoie aucun en-tête `Authorization` pour elles, même quand un jeton existe.
+
+## Vérifier la sortie générée
+
+Régénérez et vérifiez les deux côtés :
+
+<Code lang="bash" code={`route-info-builder generate
+rg "TOKEN_KEY|requiresAuth" frontend/src/api/client.ts`} />
+
+Vous devriez voir l'import, le câblage `getToken`, et `requiresAuth: true` sur exactement les routes dont les handlers prennent l'extracteur.
+
+<Aside type="caution">
+  Le jeton est lu depuis `localStorage` au moment de l'appel. Si votre jeton vit en mémoire ou dans un cookie httpOnly, gardez le client anonyme et enveloppez les méthodes `client`, ou post-traitez le fichier généré — le scanner n'émet pas d'implémentations `getToken` personnalisées.
+</Aside>
+
+<Aside type="note">
+  L'analyse de handler côté Rust est par fichier : l'extracteur est détecté par le nom du paramètre (`auth`) et son type (`JWT`), donc le chemin d'import utilisé pour le type `JWT` dans votre contrôleur importe peu.
+</Aside>
+
+## Étapes suivantes
+
+<LinkCard
+  title="Référence de configuration"
+  description="Types et défauts des clés de [typescript.auth]."
+  href="/reference/configuration/"
+/>
+<LinkCard
+  title="Comment fonctionne le scan"
+  description="Comment les métadonnées de handler, y compris l'auth, sont extraites."
+  href="/explanation/scanning-pipeline/"
+/>

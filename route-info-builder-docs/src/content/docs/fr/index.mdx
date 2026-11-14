@@ -1,0 +1,46 @@
+---
+title: "Route Info Builder"
+description: "Liens Rust typés, clients TypeScript et squelettes OpenAPI générés à partir de vos contrôleurs Axum existants."
+template: splash
+hero:
+  title: Route Info Builder
+  tagline: Un scanner de routes au build pour les frameworks de type Axum — énumérations de liens Rust typées, un client TypeScript typé avec hooks TanStack Query, un squelette OpenAPI 3.1 et une carte de routes JSON, tout depuis vos fichiers de contrôleurs existants.
+  image:
+    file: ../../../assets/logo.png
+    alt: Logo Route Info Builder
+  actions:
+    - text: Commencer
+      link: /tutorials/getting-started/
+      icon: right-arrow
+    - text: Voir sur GitHub
+      link: https://github.com/elcoosp/route-info-builder
+      icon: external
+      variant: minimal
+---
+
+import { CardGrid, LinkButton, LinkCard } from '@astrojs/starlight/components';
+
+<CardGrid>
+  <LinkCard
+    title="Tutoriels"
+    description="Apprenez en construisant : d'un projet Axum vide aux appels typés des deux côtés."
+    href="/tutorials/getting-started/"
+  />
+  <LinkCard
+    title="Guides pratiques"
+    description="Résolvez un problème précis : la CLI, les règles de nommage, l'authentification, les échecs de scan."
+    href="/guides/generate-from-cli/"
+  />
+  <LinkCard
+    title="Référence"
+    description="Consultez une clé de configuration, un drapeau CLI, une fonction publique ou la carte de routes JSON."
+    href="/reference/configuration/"
+  />
+  <LinkCard
+    title="Explication"
+    description="Comprenez comment fonctionne le scanner et pourquoi la conception ressemble à ce qu'elle est."
+    href="/explanation/scanning-pipeline/"
+  />
+</CardGrid>
+
+<LinkButton href="/tutorials/getting-started/" icon="right-arrow">Commencer le tutoriel</LinkButton>

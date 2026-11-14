@@ -1,0 +1,148 @@
+---
+title: "Référence de l'API"
+description: "L'API Rust publique — fonctions, types de configuration, types de données scannées, générateurs et l'énumération Error."
+type: reference
+---
+
+import { Aside, Code, LinkCard } from '@astrojs/starlight/components';
+
+Cette page décrit l'API publique de la crate telle qu'exportée depuis la racine de la crate (`route_info_builder::…`). La CLI est conditionnée par fonctionnalité et omise ici ; voir la [référence de la CLI](/reference/cli/).
+
+## Fonctions
+
+| Fonction | Signature | Effet |
+| :--- | :--- | :--- |
+| `generate_links` | `(&Config) -> Result<String>` | Scanne une fois ; renvoie le code de l'énumération Rust et écrit chaque sortie configurée. |
+| `scan_routes` | `(&Config) -> Result<Vec<RouteInfo>>` | Renvoie les routes scannées. |
+| `scan_controllers_folder` | `(&Config) -> Result<Vec<RouteInfo>>` | Alias de `scan_routes`, conservé pour compatibilité ascendante. |
+| `resolve_route_names` | `(&[RouteInfo], &NamingConfig) -> Vec<NamedRoute>` | Applique une fois les règles de nommage et la stratégie de collision ; chaque générateur consomme les noms résolus. |
+| `generate_ts_client` | `(&Config) -> Result<String>` | Renvoie le code du client TypeScript sans écrire de fichiers. |
+| `generate_ts_hooks` | `(&Config) -> Result<String>` | Renvoie le code des hooks TanStack Query sans écrire de fichiers. |
+| `generate_openapi_json` | `(&Config) -> Result<String>` | Renvoie le squelette OpenAPI 3.1 sous forme de chaîne JSON. |
+| `generate_route_map_json` | `(&Config) -> Result<String>` | Renvoie la carte de routes JSON sous forme de chaîne. |
+
+### Effets de bord de `generate_links`
+
+| Condition | Sortie écrite |
+| :--- | :--- |
+| `rust.output_file` défini | Le code de l'énumération à ce chemin. |
+| `typescript.generate_client` activé **et** `typescript.output_path` défini | `client_file` et `hooks_file` à l'intérieur de ce répertoire. |
+| `openapi.output_path` défini | Le document OpenAPI à ce chemin. |
+| `route_map.output_path` défini | La carte de routes JSON à ce chemin. |
+
+Chaque écriture crée d'abord les répertoires parents manquants. La `String` renvoyée est le même code Rust que celui écrit dans `rust.output_file`.
+
+### Chargement de la configuration
+
+| Fonction | Signature | Effet |
+| :--- | :--- | :--- |
+| `Config::from_toml_str` | `(&str) -> Result<Config>` | Analyse le TOML ; rejette les clés inconnues. |
+| `Config::from_toml_file` | `(&Path) -> Result<Config>` | Lit et analyse un fichier (`Error::ReadFile` en cas d'échec). |
+| `Config::load` | `(Option<&Path>) -> Result<Config>` | Chemin explicite, ou `route-info.toml` dans le répertoire de travail quand il existe, ou les défauts. |
+
+## Types
+
+| Type | Genre | Objet |
+| :--- | :--- | :--- |
+| `Config` | struct | Configuration de haut niveau ; `Default` + `Deserialize` avec `deny_unknown_fields`. |
+| `NamingConfig` | struct | Les clés `[naming]`. |
+| `RustConfig` | struct | Les clés `[rust]`. |
+| `TypeScriptConfig` | struct | Les clés `[typescript]`. |
+| `AuthConfig` | struct | Les clés `[typescript.auth]`. |
+| `OpenApiConfig` | struct | Les clés `[openapi]`. |
+| `RouteMapConfig` | struct | Les clés `[route_map]`. |
+| `CollisionStrategy` | enum | `Skip`, `AppendMethod`, `Number` (TOML : `skip`, `append-method`, `number`). |
+| `RouteInfo` | struct | Une route scannée avec nommage et métadonnées de handler. |
+| `NamedRoute` | struct | Un `RouteInfo` plus son `variant` final résolu en collision et son `ts_name`. |
+| `HandlerInfo` | struct | Extracteurs de corps/query, drapeau d'auth, type de retour du handler. |
+| `ReturnType` | struct | Type de conversion détecté et informations d'erreur. |
+| `Error` | enum | Tous les échecs du pipeline de scan et de génération ; `#[non_exhaustive]`. |
+| `Result` | alias | `std::result::Result<T, Error>`. |
+
+Chaque struct de configuration implémente `Default` ; chaque clé optionnelle a un accesseur avec le repli résolu (par exemple `RustConfig::enum_name()` → `"Link"`).
+
+### `RouteInfo`, `HandlerInfo`, `ReturnType`
+
+| Champ | Type | Signification |
+| :--- | :--- | :--- |
+| `RouteInfo::name` | `String` | Nom de base généré depuis le chemin et la méthode. |
+| `RouteInfo::path` | `String` | Chemin d'URL normalisé avec des placeholders `{param}`. |
+| `RouteInfo::method` | `String` | Méthode HTTP en majuscules. |
+| `RouteInfo::handler` | `String` | Nom de la fonction handler. |
+| `RouteInfo::handler_info` | `HandlerInfo` | Informations supplémentaires issues du handler. |
+| `HandlerInfo::body_param` | `Option<String>` | Type interne d'un extracteur de corps de style `Json<T>`. |
+| `HandlerInfo::query_params` | `Option<String>` | Type interne d'un extracteur `Query<T>`. |
+| `HandlerInfo::requires_auth` | `bool` | Le handler prend un extracteur `auth: JWT`. |
+| `HandlerInfo::return_type` | `ReturnType` | Informations de conversion et d'erreur. |
+| `ReturnType::found_type` | `Option<String>` | Type détecté dans la première conversion `json(...)`. |
+| `ReturnType::is_importable` | `bool` | Si `found_type` est un type utilisateur qui vaut la peine d'être importé. |
+| `ReturnType::error_types` | `BTreeSet<String>` | Noms d'énumérations d'erreur renvoyés par le handler. |
+| `ReturnType::error_variants` | `BTreeSet<String>` | Chemins complets de variantes d'erreur renvoyés par le handler. |
+
+Les trois structs se sérialisent avec des clés camelCase ; voir la [référence de la carte de routes JSON](/reference/route-info-json/).
+
+### `NamedRoute`
+
+La résolution de nom est une seule étape du pipeline entre le scan et la génération : `resolve_route_names(&routes, &config.naming)` applique `variant_case`, `variant_prefix`/`variant_suffix`, `preserve_numbers` et la `collision_strategy` configurée exactement une fois. Les routes abandonnées sous `skip` n'atteignent jamais un générateur.
+
+| Champ | Type | Signification |
+| :--- | :--- | :--- |
+| `route` | `&RouteInfo` | La route scannée. |
+| `variant` | `String` | Corps final de la variante d'énumération Rust (`GetUsers`, `ApiGetUsersRoute`, ...). |
+| `ts_name` | `String` | camelCase de `variant` ; la clé du client TypeScript, le suffixe de nom de hook et l'`operationId` OpenAPI — toujours égal à la valeur `name()` Rust générée. |
+
+`NamedRoute::params_interface()` renvoie le nom d'interface `...Params` utilisé par les artefacts TypeScript.
+
+Parce que l'énumération Rust, le client et les hooks TypeScript, et le document OpenAPI consomment tous les mêmes noms résolus, leurs identifiants restent en parité même quand la configuration de nommage réduit des routes distinctes à un seul nom de base (par exemple avec `include_method_in_names = false`).
+
+## Générateurs
+
+Chaque générateur implémente le trait `CodeGenerator` :
+
+<Code lang="rust" code={`pub trait CodeGenerator {
+    type Config;
+    type Output;
+    fn generate(routes: &[RouteInfo], config: &Self::Config) -> Result<Self::Output>;
+}`} />
+
+| Générateur | Config | Sortie |
+| :--- | :--- | :--- |
+| `RustLinksGenerator` | `&Config` | `String` |
+| `TypeScriptClientGenerator` | `&TypeScriptConfig` | `String` |
+| `TypeScriptHooksGenerator` | `&TypeScriptConfig` | `String` |
+| `OpenApiGenerator` | `&OpenApiConfig` | `String` |
+
+Les générateurs renvoient seulement du code ; ils n'écrivent jamais de fichiers. L'écriture est le travail de `generate_links`.
+
+Chaque générateur expose aussi un point d'entrée `generate_named(&[NamedRoute], config)` qui consomme des noms pré-résolus. Les méthodes de trait `generate(&[RouteInfo], ...)` résolvent les noms en interne — avec la configuration `naming` complète pour le générateur Rust et avec les règles de nommage par défaut pour les générateurs TypeScript et OpenAPI, dont les configurations n'embarquent pas le nommage du moment du scan. Préférez `generate_named` chaque fois que la configuration de nommage est personnalisée.
+
+## Erreurs
+
+`Error` est `#[non_exhaustive]` et dérive `thiserror::Error` ; chaque variante d'I/O porte le chemin fautif et la `#[source]` sous-jacente.
+
+| Variante | Motif de message | Source |
+| :--- | :--- | :--- |
+| `ReadDir` | `failed to read controllers directory \`{path}\`` | `std::io::Error` |
+| `ReadFile` | `failed to read controller file \`{path}\`` | `std::io::Error` |
+| `CreateDir` | `failed to create output directory \`{path}\`` | `std::io::Error` |
+| `WriteFile` | `failed to write output file \`{path}\`` | `std::io::Error` |
+| `Parse` | `failed to parse controller file \`{path}\`` | `syn::Error` |
+| `Config` | `invalid configuration: {0}` | `toml::de::Error` |
+| `Json` | `failed to serialize generated data: {0}` | `serde_json::Error` |
+
+<Aside type="caution">
+  Parce que `Error` est `#[non_exhaustive]`, matchez avec une branche joker ; de nouvelles variantes peuvent apparaître dans des versions mineures.
+</Aside>
+
+## Étapes suivantes
+
+<LinkCard
+  title="Référence de configuration"
+  description="Chaque clé que la famille Config accepte."
+  href="/reference/configuration/"
+/>
+<LinkCard
+  title="Référence de la carte de routes JSON"
+  description="La forme sérialisée de RouteInfo."
+  href="/reference/route-info-json/"
+/>

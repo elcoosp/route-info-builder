@@ -1,0 +1,82 @@
+---
+title: "Référence de la carte de routes JSON"
+description: "La forme JSON exacte d'un enregistrement de route scanné, telle qu'imprimée par scan et écrite par la carte de routes."
+type: reference
+---
+
+import { Aside, Code, LinkCard } from '@astrojs/starlight/components';
+
+Cette page décrit la carte de routes JSON : la forme sérialisable de chaque `RouteInfo` scanné. Les mêmes enregistrements apparaissent à deux endroits — la stdout de `route-info-builder scan` et le fichier écrit quand `route_map.output_path` est configuré. La sérialisation est du JSON joliment formaté avec des clés camelCase.
+
+## Forme d'enregistrement
+
+| Champ | Type | Signification |
+| :--- | :--- | :--- |
+| `name` | `string` | Nom de base généré depuis le chemin normalisé et la méthode HTTP, avant résolution de collision de variantes. |
+| `path` | `string` | Chemin d'URL normalisé avec placeholders `{param}` ; l'entrée historique `:param` et `*wildcard` est canonicalisée. |
+| `method` | `string` | Méthode HTTP en majuscules, par exemple `GET`. |
+| `handler` | `string` | Nom de la fonction handler servant la route. |
+| `handlerInfo` | `object` | Métadonnées extraites du handler ; voir ci-dessous. |
+
+## `handlerInfo`
+
+| Champ | Type | Signification |
+| :--- | :--- | :--- |
+| `bodyParam` | `string \| null` | Type interne d'un extracteur de corps de style `Json<T>` ; `null` quand le handler ne prend pas de corps JSON. |
+| `queryParams` | `string \| null` | Type interne d'un extracteur `Query<T>` ; `null` quand absent. |
+| `requiresAuth` | `boolean` | Le handler déclare un extracteur `auth: JWT`. |
+| `returnType` | `object` | Informations de conversion et d'erreur ; voir ci-dessous. |
+
+## `handlerInfo.returnType`
+
+| Champ | Type | Signification |
+| :--- | :--- | :--- |
+| `foundType` | `string \| null` | Type détecté dans la première conversion `json(...)` ; `Vec::<T>::new()` est rapporté comme `Array<T>`. |
+| `isImportable` | `boolean` | Si `foundType` est un type utilisateur qui vaut la peine d'être importé (les types intégrés ne le sont pas). |
+| `errorTypes` | `string[]` | Noms d'énumérations d'erreur renvoyés par le handler ; triés, dédupliqués. |
+| `errorVariants` | `string[]` | Chemins complets de variantes d'erreur renvoyés par le handler ; triés, dédupliqués. |
+
+## Exemple d'enregistrement
+
+<Code lang="json" code={`{
+  "name": "get_api_users_user_id",
+  "path": "/api/users/{user_id}",
+  "method": "GET",
+  "handler": "get_user",
+  "handlerInfo": {
+    "bodyParam": null,
+    "queryParams": null,
+    "requiresAuth": true,
+    "returnType": {
+      "foundType": "UserResponse",
+      "isImportable": true,
+      "errorTypes": ["BadRequest"],
+      "errorVariants": ["BadRequest::EmailAlreadyExists"]
+    }
+  }
+}`} />
+
+## Déterminisme
+
+La carte de routes est stable à travers les exécutions sur le même arbre source :
+
+- Les fichiers de contrôleurs sont visités dans l'ordre trié ; `mod.rs`, les fichiers point et les répertoires point sont sautés.
+- Les enregistrements `(method, path)` en double sont abandonnés — la première occurrence dans cet ordre gagne.
+- `errorTypes` et `errorVariants` sont des ensembles ordonnés, donc leur ordre d'éléments est trié, pas l'ordre de déclaration.
+
+<Aside type="caution">
+  `name` dans le JSON est le nom de base avant résolution de collision. Deux enregistrements peuvent porter le même `name` tandis que l'énumération générée les désambiguïse selon `collision_strategy`.
+</Aside>
+
+## Étapes suivantes
+
+<LinkCard
+  title="Référence de l'API"
+  description="Les structs Rust derrière ces enregistrements."
+  href="/reference/api/"
+/>
+<LinkCard
+  title="Comment fonctionne le scan"
+  description="Comment chaque champ est extrait de vos contrôleurs."
+  href="/explanation/scanning-pipeline/"
+/>

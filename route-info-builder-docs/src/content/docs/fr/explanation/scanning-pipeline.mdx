@@ -1,0 +1,77 @@
+---
+title: "Comment fonctionne le scan"
+description: "Le pipeline qui transforme les fichiers de contrôleurs en enregistrements de routes — collecte de fichiers, parcours des instructions, canonicalisation des chemins, métadonnées de handler et avertissements."
+type: explanation
+---
+
+import { Aside, LinkCard } from '@astrojs/starlight/components';
+
+Le scanner est un lecteur de source Rust au build, ni un plugin de compilateur ni un programme en cours d'exécution. Il analyse les fichiers de contrôleurs en arbres de syntaxe abstraite, parcourt ces arbres pour les appels d'enregistrement de routeur, et dérive tout le reste — noms, types, erreurs — depuis la même syntaxe. Cette position entre compilation et analyse explique la plupart de ce qui suit : ce qu'il voit, ce qu'il ignore délibérément, et pourquoi certaines formes de code sont invisibles pour lui.
+
+## Étape 1 — collecter les fichiers
+
+Le scanner parcourt `controllers_path` récursivement et collecte les fichiers `*.rs`. Trois règles façonnent la collecte : les fichiers `mod.rs` sont sautés, les noms commençant par un point sont sautés, et les fichiers survivants sont visités dans l'ordre trié. L'ordre trié est ce qui rend tout le pipeline déterministe — le même arbre source produit une sortie octet pour octet identique sur chaque machine.
+
+## Étape 2 — trouver la fonction de builder
+
+Chaque fichier collecté est analysé avec `syn`, et les éléments de niveau supérieur du fichier sont recherchés pour une fonction dont le nom correspond à `controllers_fn` (par défaut `routes`). Un fichier sans une telle fonction ne contribue rien ; la fonction est recherchée par nom seulement, donc sa visibilité et sa signature n'importent pas au scanner.
+
+## Étape 3 — parcourir les instructions d'enregistrement
+
+Le scanner parcourt ensuite les *instructions du corps de cette fonction*, à la recherche d'appels de méthode qu'il reconnaît. Deux dialectes d'enregistrement sont compris :
+
+- **Style Loco** — `Routes::new()`, `.prefix("/api/users")`, `.add("/", get(list_users))`.
+- **Style Axum** — `Router::new()`, `.route("/api/posts", get(list_posts))`, `.nest("/api/admin", ...)`, `.merge(other_routes())`.
+
+Quelques comportements valent d'être connus précisément, parce qu'ils décident de ce qui est visible :
+
+- `prefix` définit le préfixe que chaque `add`/`route` ultérieur de la chaîne rejoint.
+- `nest` empile son chemin sur le préfixe courant pendant le parcours du routeur interne, puis restaure le préfixe précédent — l'imbrication se compose.
+- `merge` parcourt son argument, donc les routes des builders fusionnés sont inlinées dans la même liste.
+- Une chaîne de routeur de méthode telle que `get(one).post(two)` émet une route par verbe, dans l'ordre du source.
+- Chaque appel dont le callee est nommé `new` réinitialise le préfixe à la base d'imbrication englobante — c'est ainsi que `Routes::new()` et `Router::new()` se comportent comme des frontières.
+
+Cette vue au niveau des instructions est aussi la raison pour laquelle les routes assemblées à travers des liaisons `let` peuvent passer inaperçues : seules les instructions d'expression sont visitées, donc un routeur construit dans une liaison et renvoyé depuis une autre ne contribue que les appels qui apparaissent en position d'expression. Les chaînes d'instructions — un `router.route(...)` par instruction — sont la forme visible.
+
+Les verbes reconnus sont l'ensemble HTTP `get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `trace` et `connect` ; un handler enregistré via un verbe non reconnu retombe sur la méthode cliente générique dans le TypeScript généré.
+
+## Étape 4 — canonicaliser les chemins
+
+Les chemins sont normalisés une fois, dans `utils::path`, et chaque générateur consomme la forme normalisée. La normalisation réduit les slashs en double, retire un slash final, garantit un slash initial, et réécrit la syntaxe de paramètre historique en la forme Axum 0.8 : `:name` devient `{name}` et `*name` devient `{*name}`. Les segments dégénérés — un paramètre vide tel que `{}` — sont traités comme littéraux plutôt que comme paramètres, ce qui garde le code généré valide.
+
+## Étape 5 — enrichir avec les métadonnées du handler
+
+Pour chaque route, le scanner recherche la fonction handler dans le même fichier et extrait ce que sa signature et son corps révèlent :
+
+- Un paramètre nommé `auth` de type `JWT` marque la route comme authentifiée.
+- Les extracteurs de corps — `Json<T>`, `JsonValidate<T>`, `JsonValidateWithMessage<T>` — deviennent le `bodyParam` de la route.
+- Un extracteur `Query<T>` devient `queryParams`.
+- La première conversion `format::json(...)` dans le corps devient le type de retour : `Type::from(...)` et `Type(...)` conservent le nom du type, et `Vec::<T>::new()` est rapporté comme `Array<T>` avec les types Rust intégrés marqués comme non importables.
+- Les erreurs renvoyées — des expressions telles que `Err(BadRequest::EmailAlreadyExists.into())` — sont collectées dans des ensembles d'erreurs par route, à la fois comme noms d'énumérations et comme chemins de variantes complets.
+
+L'extraction parcourt tout le corps du handler avec l'infrastructure de visiteur de `syn`, donc les fermetures, les blocs `try` et les instructions imbriquées sont couverts par la même machinerie plutôt que par une récursion écrite à la main.
+
+<Aside type="note">
+  Le scanner connaît les *noms* de types, pas les formes. `foundType: "UserResponse"` signifie que le générateur peut référencer un type `UserResponse` en TypeScript — il ne peut pas et ne décrit pas les champs de ce type. Le squelette OpenAPI et les types TypeScript basés sur les imports sont tous deux honnêtes sur cette limite.
+</Aside>
+
+## Déduplication et avertissements
+
+Après le scan de tous les fichiers, deux vérifications sur tout le corpus s'exécutent. Les paires `(method, path)` en double sont abandonnées — la première occurrence gagne, dans l'ordre déterministe ci-dessus — et chaque abandon émet un `cargo:warning`. Les routes qui partagent une forme de chemin mais utilisent des noms de paramètres différents produisent aussi un avertissement, avec les positions comparées indépendamment pour qu'une incohérence n'en cache pas une autre. Un scan qui se termine avec zéro route émet son propre avertissement nommant le dossier qu'il a parcouru.
+
+## Ce que le scanner ne sait délibérément pas
+
+Trois limites sont par conception plutôt que par omission. Le scanner ne résout pas les chemins de module des handlers, ce qui explique pourquoi il ne génère aucun builder de routeur — enregistrer des handlers exigerait de deviner des imports qu'il refuse de deviner. Il ne connaît pas les formes de types, ce qui explique pourquoi le document OpenAPI est un squelette. Et il n'exécute rien, ce qui explique pourquoi seuls les dialectes d'enregistrement reconnus sont visibles. Chacune de ces limites remonte à la même décision : analyser ce qui est écrit, n'inventer rien.
+
+## Étapes suivantes
+
+<LinkCard
+  title="Dépanner le scan"
+  description="Corrigez les modes d'échec que ce pipeline peut produire."
+  href="/guides/troubleshoot-scanning/"
+/>
+<LinkCard
+  title="Nommage et collisions expliqués"
+  description="Ce qui arrive au nom de chaque route scannée."
+  href="/explanation/naming-and-collisions/"
+/>
