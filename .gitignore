@@ -10,3 +10,7 @@ routes.json
 commit.sh
 .vercel
 .env*
+
+# Build-time backups
+*.bak
+*.orig
