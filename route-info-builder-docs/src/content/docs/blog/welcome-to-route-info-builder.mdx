@@ -1,0 +1,75 @@
+---
+title: Eliminating API drift between Axum controllers and React hooks
+date: 2026-11-15
+cover:
+  alt: Route Info Builder Architecture
+  image: ./welcome-cover.jpg
+image: ./welcome-cover.jpg
+---
+
+import { Card, CardGrid, Aside } from '@astrojs/starlight/components';
+
+When a Rust backend exposes REST endpoints over Axum or Loco, the frontend client almost always drifts out of sync. Someone renames `:user_id` to `{id}` or adds a query parameter in Rust, and the TypeScript fetch wrapper silently breaks at runtime.
+
+We built `route-info-builder` (`0.2`) to scan your Rust controller ASTs at build time and generate synchronized Rust route enums, TypeScript clients, TanStack Query hooks, and an OpenAPI 3.1 skeleton from one source of truth.
+
+## The Goal
+
+We wanted zero runtime reflection and zero manual route registration macros. By parsing existing `Router::new().route(...)` and Loco `Routes::new().add(...)` definitions directly from controller files in `build.rs` or via CLI, every artifact stays locked to the actual handler signatures.
+
+## The Architecture
+
+The scanner parses controller `.rs` files recursively in deterministic order, extracts handler metadata (`Json<T>`, `Query<T>`, `JWT` auth extractors, and typed `Err(...)` responses), and runs a single collision-resolved naming pass (`resolve_route_names`) before emitting any files.
+
+<CardGrid stagger>
+  <Card title="AST Controller Scanner" icon="setting">
+    Understands both Axum (`Router`, `.nest`, `.merge`) and Loco (`Routes`), canonicalizing legacy `:param` syntax into `{param}` automatically.
+  </Card>
+  <Card title="Typed Rust Link Enum" icon="puzzle">
+    Generates a `Link` enum with `.to_path()`, `.method()`, and `.name()` methods formatted via `prettyplease`, eliminating hardcoded URL strings in Rust.
+  </Card>
+  <Card title="TypeScript & TanStack Query" icon="rocket">
+    Emits a typed fetch client alongside `useQuery` and `useMutation` hooks, complete with `AbortSignal` plumbing and per-route error unions.
+  </Card>
+  <Card title="OpenAPI 3.1 & Route Map" icon="approve-check">
+    Outputs an OpenAPI 3.1 JSON skeleton and a deterministic route map sharing the exact same `operationId`s as the Rust and TypeScript clients.
+  </Card>
+</CardGrid>
+
+## What it cost
+
+Building an AST scanner rather than a proc-macro meant handling real-world Rust syntax patterns in controller files: nested routers, chained method handlers (`get(a).post(b)`), and inconsistent parameter names across shared path shapes. When two routes collide on a base name or use mismatched parameter names (`/items/{id}` vs `/items/{item_id}`), the generator emits `cargo:warning` diagnostics instead of silently overwriting variants.
+
+<Aside type="caution" title="Limitations">
+The scanner relies on static AST inspection of `routes` functions inside controller files. Routes constructed dynamically at runtime from database rows or external config files cannot be discovered at build time.
+</Aside>
+
+## Getting started
+
+```toml
+[build-dependencies]
+route-info-builder = "0.2"
+```
+
+```rust
+use route_info_builder::{Config, RustConfig, TypeScriptConfig};
+
+fn main() {
+    let config = Config {
+        controllers_path: "src/controllers".into(),
+        rust: RustConfig {
+            output_file: Some("src/generated/links.rs".into()),
+            ..RustConfig::default()
+        },
+        typescript: TypeScriptConfig {
+            generate_client: Some(true),
+            output_path: Some("frontend/src/api".into()),
+            ..TypeScriptConfig::default()
+        },
+        ..Config::default()
+    };
+    route_info_builder::generate_links(&config).expect("failed to generate route links");
+}
+```
+
+Read the [getting started tutorial](/tutorials/getting-started/) to wire up `build.rs` or run `route-info-builder init` from the CLI.
