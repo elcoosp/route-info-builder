@@ -1,0 +1,75 @@
+---
+title: Éliminer la dérive d'API entre les contrôleurs Axum et les hooks React
+date: 2026-11-15
+cover:
+  alt: Architecture de Route Info Builder
+  image: ../../blog/welcome-cover.jpg
+image: ../../blog/welcome-cover.jpg
+---
+
+import { Card, CardGrid, Aside } from '@astrojs/starlight/components';
+
+Lorsqu'un backend Rust expose des points de terminaison REST via Axum ou Loco, le client frontend finit presque toujours par dériver. Quelqu'un renomme `:user_id` en `{id}` ou ajoute un paramètre de requête côté Rust, et le wrapper fetch TypeScript casse silencieusement à l'exécution.
+
+Nous avons conçu `route-info-builder` (`0.2`) pour analyser l'AST de vos contrôleurs Rust à la compilation et générer des énumérations de routes Rust synchronisées, des clients TypeScript, des hooks TanStack Query et un squelette OpenAPI 3.1 à partir d'une source de vérité unique.
+
+## L'objectif
+
+Nous voulions zéro réflexion à l'exécution et aucune macro manuelle d'enregistrement de routes. En analysant directement les définitions existantes `Router::new().route(...)` et Loco `Routes::new().add(...)` depuis les fichiers de contrôleurs dans `build.rs` ou via la CLI, chaque artefact généré reste verrouillé sur les signatures réelles des gestionnaires.
+
+## L'architecture
+
+L'analyseur parcourt récursivement les fichiers `.rs` des contrôleurs dans un ordre déterministe, extrait les métadonnées des gestionnaires (`Json<T>`, `Query<T>`, extracteurs d'authentification `JWT` et réponses d'erreur typées `Err(...)`), puis exécute une passe unique de nommage avec résolution des collisions (`resolve_route_names`) avant d'émettre les fichiers.
+
+<CardGrid stagger>
+  <Card title="Analyseur AST de contrôleurs" icon="setting">
+    Comprend aussi bien Axum (`Router`, `.nest`, `.merge`) que Loco (`Routes`), en canonisant automatiquement l'ancienne syntaxe `:param` vers `{param}`.
+  </Card>
+  <Card title="Énumération Rust Link typée" icon="puzzle">
+    Génère une énumération `Link` dotée des méthodes `.to_path()`, `.method()` et `.name()` formatée avec `prettyplease`, éliminant les chaînes d'URL codées en dur en Rust.
+  </Card>
+  <Card title="TypeScript et TanStack Query" icon="rocket">
+    Émet un client fetch typé accompagné des hooks `useQuery` et `useMutation`, avec gestion complète d'`AbortSignal` et unions d'erreurs par route.
+  </Card>
+  <Card title="OpenAPI 3.1 et carte des routes" icon="approve-check">
+    Produit un squelette JSON OpenAPI 3.1 et une carte déterministe des routes partageant exactement les mêmes `operationId` que les clients Rust et TypeScript.
+  </Card>
+</CardGrid>
+
+## Ce que cela a coûté
+
+Construire un analyseur AST plutôt qu'une macro procédurale impliquait de gérer les motifs syntaxiques réels des contrôleurs Rust : routeurs imbriqués, gestionnaires chaînés par méthode (`get(a).post(b)`) et noms de paramètres incohérents sur des formes de chemins partagées. Lorsque deux routes entrent en collision sur un nom de base ou utilisent des noms de paramètres divergents (`/items/{id}` contre `/items/{item_id}`), le générateur émet des diagnostics `cargo:warning` plutôt que d'écraser silencieusement des variantes.
+
+<Aside type="caution" title="Limites">
+L'analyseur s'appuie sur l'inspection statique de l'AST des fonctions `routes` dans les fichiers de contrôleurs. Les routes construites dynamiquement à l'exécution à partir de lignes de base de données ou de fichiers de configuration externes ne peuvent pas être découvertes à la compilation.
+</Aside>
+
+## Démarrer
+
+```toml
+[build-dependencies]
+route-info-builder = "0.2"
+```
+
+```rust
+use route_info_builder::{Config, RustConfig, TypeScriptConfig};
+
+fn main() {
+    let config = Config {
+        controllers_path: "src/controllers".into(),
+        rust: RustConfig {
+            output_file: Some("src/generated/links.rs".into()),
+            ..RustConfig::default()
+        },
+        typescript: TypeScriptConfig {
+            generate_client: Some(true),
+            output_path: Some("frontend/src/api".into()),
+            ..TypeScriptConfig::default()
+        },
+        ..Config::default()
+    };
+    route_info_builder::generate_links(&config).expect("failed to generate route links");
+}
+```
+
+Lisez le [tutoriel de démarrage](/fr/tutorials/getting-started/) pour configurer `build.rs` ou exécuter `route-info-builder init` depuis la CLI.
