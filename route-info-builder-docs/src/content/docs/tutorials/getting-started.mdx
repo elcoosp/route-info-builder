@@ -18,42 +18,15 @@ This tutorial takes you from an empty Rust project to generated routing artifact
 
 1. **Create the Axum project and one controller file.**
 
-    <Code lang="bash" title="Terminal" code={`cargo new shop-api
-cd shop-api
-mkdir -p src/controllers`} />
+    <Code lang="bash" title="Terminal" code={"cargo new shop-api\ncd shop-api\nmkdir -p src/controllers"} />
 
     Add the runtime dependencies to `Cargo.toml`:
 
-    <Code lang="toml" title="Cargo.toml" code={`[dependencies]
-axum = "0.8"
-tokio = { version = "1", features = ["full"] }
-
-[build-dependencies]
-route-info-builder = "0.2"`} />
+    <Code lang="toml" title="Cargo.toml" code={"[dependencies]\naxum = \"0.8\"\ntokio = { version = \"1\", features = [\"full\"] }\n\n[build-dependencies]\nroute-info-builder = \"0.2\""} />
 
     Create the controller `src/controllers/users.rs`. The scanner looks for a function named `routes` inside every `*.rs` file under your controllers folder:
 
-    <Code lang="rust" title="src/controllers/users.rs" code={`use axum::routing::{get, post};
-use axum::Router;
-
-pub fn routes() -> Router {
-Router::new()
-    .route("/api/users", get(list_users))
-    .route("/api/users", post(create_user))
-    .route("/api/users/{user_id}", get(get_user))
-}
-
-async fn list_users() -> &'static str {
-"[]"
-}
-
-async fn create_user() -> &'static str {
-"created"
-}
-
-async fn get_user() -> &'static str {
-"user"
-}`} />
+    <Code lang="rust" title="src/controllers/users.rs" code={"use axum::routing::{get, post};\nuse axum::Router;\n\npub fn routes() -> Router {\nRouter::new()\n    .route(\"/api/users\", get(list_users))\n    .route(\"/api/users\", post(create_user))\n    .route(\"/api/users/{user_id}\", get(get_user))\n}\n\nasync fn list_users() -> &'static str {\n\"[]\"\n}\n\nasync fn create_user() -> &'static str {\n\"created\"\n}\n\nasync fn get_user() -> &'static str {\n\"user\"\n}"} />
 
     Your project now looks like this:
 
@@ -70,35 +43,17 @@ async fn get_user() -> &'static str {
 
     Create `build.rs` in the project root. Every field below is a real configuration key; `Config` implements `Default`, so you only set what you need:
 
-    <Code lang="rust" title="build.rs" code={`use route_info_builder::{Config, RustConfig, TypeScriptConfig};
-
-fn main() {
-let config = Config {
-    controllers_path: "src/controllers".into(),
-    rust: RustConfig {
-        output_file: Some("src/links.rs".into()),
-        ..RustConfig::default()
-    },
-    typescript: TypeScriptConfig {
-        generate_client: Some(true),
-        output_path: Some("../web/src/api".into()),
-        ..TypeScriptConfig::default()
-    },
-    ..Config::default()
-};
-
-route_info_builder::generate_links(&config).expect("failed to generate route links");
-}`} />
+    <Code lang="rust" title="build.rs" code={"use route_info_builder::{Config, RustConfig, TypeScriptConfig};\n\nfn main() {\nlet config = Config {\n    controllers_path: \"src/controllers\".into(),\n    rust: RustConfig {\n        output_file: Some(\"src/links.rs\".into()),\n        ..RustConfig::default()\n    },\n    typescript: TypeScriptConfig {\n        generate_client: Some(true),\n        output_path: Some(\"../web/src/api\".into()),\n        ..TypeScriptConfig::default()\n    },\n    ..Config::default()\n};\n\nroute_info_builder::generate_links(&config).expect(\"failed to generate route links\");\n}"} />
 
     This one call scans once, returns the generated Rust code, and writes every configured output to disk, creating parent directories as needed.
 
 3. **Generate the artifacts.**
 
-    <Code lang="bash" title="Terminal" code={`cargo build`} />
+    <Code lang="bash" title="Terminal" code={"cargo build"} />
 
     You should now see the generated files, and Cargo prints the scanner's build-time note about the TypeScript client:
 
-    <Code lang="ansi" code={`​warning: route-info-builder: generated TypeScript client at ../web/src/api`} />
+    <Code lang="ansi" code={"\u200bwarning: route-info-builder: generated TypeScript client at ../web/src/api"} />
 
     Your tree now contains three generated files:
 
@@ -115,11 +70,7 @@ route_info_builder::generate_links(&config).expect("failed to generate route lin
 
     Open `src/links.rs`. You should see one enum with one variant per route — the method is part of the name by default, and path parameters become fields:
 
-    <Code lang="rust" title="src/links.rs" code={`pub enum Link {
-GetApiUsers,
-PostApiUsers,
-GetApiUsersUserId { user_id: String },
-}`} />
+    <Code lang="rust" title="src/links.rs" code={"pub enum Link {\nGetApiUsers,\nPostApiUsers,\nGetApiUsersUserId { user_id: String },\n}"} />
 
     Open `../web/src/api` (it does not exist yet, the build script creates it): you should find `client.ts`, a self-contained HTTP client with typed methods, and `api.ts`, the TanStack Query hooks.
 
@@ -127,26 +78,13 @@ GetApiUsersUserId { user_id: String },
 
     Declare the generated module in `src/main.rs` and try the three methods every variant carries:
 
-    <Code lang="rust" title="src/main.rs" code={`mod links;
-
-use links::Link;
-
-#[tokio::main]
-async fn main() {
-let user_link = Link::GetApiUsersUserId { user_id: "123".to_string() };
-
-println!("Path: {}", user_link.to_path()); // /api/users/123
-println!("Method: {}", user_link.method()); // GET
-println!("Name: {}", user_link.name()); // getApiUsersUserId
-}`} />
+    <Code lang="rust" title="src/main.rs" code={"mod links;\n\nuse links::Link;\n\n#[tokio::main]\nasync fn main() {\nlet user_link = Link::GetApiUsersUserId { user_id: \"123\".to_string() };\n\nprintln!(\"Path: {}\", user_link.to_path()); // /api/users/123\nprintln!(\"Method: {}\", user_link.method()); // GET\nprintln!(\"Name: {}\", user_link.name()); // getApiUsersUserId\n}"} />
 
     Run it:
 
-    <Code lang="bash" title="Terminal" code={`cargo run`} />
+    <Code lang="bash" title="Terminal" code={"cargo run"} />
 
-    <Code lang="ansi" code={`Path: /api/users/123
-Method: GET
-Name: getApiUsersUserId`} />
+    <Code lang="ansi" code={"Path: /api/users/123\nMethod: GET\nName: getApiUsersUserId"} />
 
     `name()` returns the same key the TypeScript client uses, which keeps query keys in sync across both languages.
 
@@ -156,22 +94,13 @@ Name: getApiUsersUserId`} />
 
     <Tabs>
     <TabItem label="pnpm">
-      <Code lang="bash" title="Terminal" code={`pnpm create vite@latest web --template react-ts
-cd web
-pnpm install
-pnpm add @tanstack/react-query`} />
+      <Code lang="bash" title="Terminal" code={"pnpm create vite@latest web --template react-ts\ncd web\npnpm install\npnpm add @tanstack/react-query"} />
     </TabItem>
     <TabItem label="npm">
-      <Code lang="bash" title="Terminal" code={`npm create vite@latest web -- --template react-ts
-cd web
-npm install
-npm install @tanstack/react-query`} />
+      <Code lang="bash" title="Terminal" code={"npm create vite@latest web -- --template react-ts\ncd web\nnpm install\nnpm install @tanstack/react-query"} />
     </TabItem>
     <TabItem label="yarn">
-      <Code lang="bash" title="Terminal" code={`yarn create vite@latest web --template react-ts
-cd web
-yarn install
-yarn add @tanstack/react-query`} />
+      <Code lang="bash" title="Terminal" code={"yarn create vite@latest web --template react-ts\ncd web\nyarn install\nyarn add @tanstack/react-query"} />
     </TabItem>
     </Tabs>
 
@@ -179,46 +108,17 @@ yarn add @tanstack/react-query`} />
 
     The generated `api.ts` exposes one hook per route: `useQuery` hooks for GET routes and `useMutation` hooks for everything else. Replace the contents of `web/src/main.tsx`:
 
-    <Code lang="tsx" title="web/src/main.tsx" code={`import { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import App from "./App";
-import "./index.css";
-
-const queryClient = new QueryClient();
-
-createRoot(document.getElementById("root")!).render(
-<StrictMode>
-    <QueryClientProvider client={queryClient}>
-        <App />
-    </QueryClientProvider>
-</StrictMode>,
-);`} />
+    <Code lang="tsx" title="web/src/main.tsx" code={"import { StrictMode } from \"react\";\nimport { createRoot } from \"react-dom/client\";\nimport { QueryClient, QueryClientProvider } from \"@tanstack/react-query\";\nimport App from \"./App\";\nimport \"./index.css\";\n\nconst queryClient = new QueryClient();\n\ncreateRoot(document.getElementById(\"root\")!).render(\n<StrictMode>\n    <QueryClientProvider client={queryClient}>\n        <App />\n    </QueryClientProvider>\n</StrictMode>,\n);"} />
 
     Replace `web/src/App.tsx`:
 
-    <Code lang="tsx" title="web/src/App.tsx" code={`import { useGetApiUsers, useGetApiUsersUserId } from "./api/api";
-
-export default function App() {
-const { data: users, isLoading } = useGetApiUsers();
-const { data: user } = useGetApiUsersUserId({ userId: "1" });
-
-if (isLoading) return <p>Loading...</p>;
-
-return (
-    <main>
-        <h1>Users</h1>
-        <pre>{JSON.stringify(users)}</pre>
-        <pre>{JSON.stringify(user)}</pre>
-    </main>
-);
-}`} />
+    <Code lang="tsx" title="web/src/App.tsx" code={"import { useGetApiUsers, useGetApiUsersUserId } from \"./api/api\";\n\nexport default function App() {\nconst { data: users, isLoading } = useGetApiUsers();\nconst { data: user } = useGetApiUsersUserId({ userId: \"1\" });\n\nif (isLoading) return <p>Loading...</p>;\n\nreturn (\n    <main>\n        <h1>Users</h1>\n        <pre>{JSON.stringify(users)}</pre>\n        <pre>{JSON.stringify(user)}</pre>\n    </main>\n);\n}"} />
 
     The second hook takes a typed parameter object — the generator emitted a `GetApiUsersUserIdParams` interface with a `userId: string` field from the `{user_id}` path segment.
 
     Build the frontend to confirm everything type-checks:
 
-    <Code lang="bash" title="Terminal" code={`pnpm build`} />
+    <Code lang="bash" title="Terminal" code={"pnpm build"} />
 
     You should see Vite finish without type errors. The generated hooks compile inside your app with no additional wiring: the client module is self-contained and handles headers, JSON parsing, 204 responses and error transformation itself.
 

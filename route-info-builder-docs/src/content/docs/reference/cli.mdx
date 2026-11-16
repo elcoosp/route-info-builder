@@ -35,12 +35,7 @@ Overrides apply for the current invocation only; the TOML file is not modified.
 
 Loads the configuration, applies flag overrides, scans the controllers and writes every configured output, creating parent directories. Prints a summary listing each written artifact:
 
-<Code lang="ansi" code={`Generated Rust link enum (2413 bytes).
-  rust:      src/generated/links.rs
-  typescript: frontend/src/api/client.ts
-              frontend/src/api/api.ts
-  openapi:   openapi.json
-  route map: routes.json`} />
+<Code lang="ansi" code={"Generated Rust link enum (2413 bytes).\n  rust:      src/generated/links.rs\n  typescript: frontend/src/api/client.ts\n              frontend/src/api/api.ts\n  openapi:   openapi.json\n  route map: routes.json"} />
 
 Lines appear only for outputs that are configured (or overridden).
 

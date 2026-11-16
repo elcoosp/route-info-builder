@@ -16,20 +16,13 @@ Vérifiez les quatre règles que le scanner applique lors de la collecte des rou
 
 1. **Nom de fonction.** Seule une fonction nommée `routes` est lue. Un contrôleur dont la fonction de builder s'appelle autrement est invisible jusqu'à ce que vous le déclariez :
 
-    <Code lang="toml" code={`controllers_fn = "api_routes"`} />
+    <Code lang="toml" code={"controllers_fn = \"api_routes\""} />
 
 2. **Nom de fichier.** Les fichiers `mod.rs` et les fichiers point sont sautés ; seuls les fichiers `*.rs` sont considérés (extension insensible à la casse). Renommez le contenu de `mod.rs` dans un fichier régulier tel que `users.rs`.
 
 3. **Forme d'instruction.** Les appels d'enregistrement doivent apparaître comme des expressions dans le corps de la fonction — une expression chaînée ou une instruction par appel. Les routes construites à travers des liaisons `let` et seulement renvoyées à la fin ne sont pas vues. Réécrivez en chaîne d'instructions :
 
-    <Code lang="rust" title="users.rs" code={`// Non vu : le routeur est assemblé à travers des liaisons let.
-let router = Router::new();
-let router = router.route("/api/users", get(list_users));
-router
-
-// Vu : chaque enregistrement est sa propre instruction d'expression.
-let router = Router::new();
-router.route("/api/users", get(list_users))`} />
+    <Code lang="rust" title="users.rs" code={"// Non vu : le routeur est assembl\u00e9 \u00e0 travers des liaisons let.\nlet router = Router::new();\nlet router = router.route(\"/api/users\", get(list_users));\nrouter\n\n// Vu : chaque enregistrement est sa propre instruction d'expression.\nlet router = Router::new();\nrouter.route(\"/api/users\", get(list_users))"} />
 
 4. **Syntaxe de chemin.** `{param}` et `:param` historique sont tous deux compris et canonicalisés, donc une route historique apparaît quand même — mais sous sa forme canonique (`/items/{item_id}`).
 

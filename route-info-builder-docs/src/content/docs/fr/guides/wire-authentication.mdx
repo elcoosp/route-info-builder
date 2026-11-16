@@ -17,19 +17,11 @@ Ce guide vous montre comment connecter le client généré au jeton d'auth de vo
 
 Ajoutez la table `auth` à `[typescript]` dans `route-info.toml` :
 
-<Code lang="toml" title="route-info.toml" code={`[typescript.auth]
-token_key_import = "TOKEN_KEY"       # nom de constante, par défaut TOKEN_KEY
-import_from      = "@/hooks/use-auth"`} />
+<Code lang="toml" title="route-info.toml" code={"[typescript.auth]\ntoken_key_import = \"TOKEN_KEY\"       # nom de constante, par d\u00e9faut TOKEN_KEY\nimport_from      = \"@/hooks/use-auth\""} />
 
 `import_from` est ce qui bascule le client d'anonyme à authentifié : il nomme le module depuis lequel la constante est importée. Le `client.ts` généré contient alors :
 
-<Code lang="typescript" title="client.ts" code={`import { TOKEN_KEY } from "@/hooks/use-auth";
-
-export const apiClient = new ApiClient({
-    getToken: async () => {
-        return localStorage.getItem(TOKEN_KEY);
-    },
-});`} />
+<Code lang="typescript" title="client.ts" code={"import { TOKEN_KEY } from \"@/hooks/use-auth\";\n\nexport const apiClient = new ApiClient({\n    getToken: async () => {\n        return localStorage.getItem(TOKEN_KEY);\n    },\n});"} />
 
 Omettez entièrement `[typescript.auth]` pour générer le client anonyme — pour des API publiques ou quand vous câblez le jeton ailleurs.
 
@@ -37,18 +29,11 @@ Omettez entièrement `[typescript.auth]` pour générer le client anonyme — po
 
 Le scanner marque une route comme exigeant l'authentification quand son handler déclare un paramètre extracteur nommé `auth` de type `JWT` :
 
-<Code lang="rust" code={`async fn get_profile(auth: JWT) -> Response {
-    // ...
-}`} />
+<Code lang="rust" code={"async fn get_profile(auth: JWT) -> Response {\n    // ...\n}"} />
 
 La méthode générée pour cette route passe `requiresAuth: true` au client. Au moment de la requête, le client attend `getToken()` et définit l'en-tête quand un jeton existe :
 
-<Code lang="typescript" code={`if (options.requiresAuth && this.getToken) {
-    const token = await this.getToken();
-    if (token) {
-        headers.set("Authorization", "Bearer " + token);
-    }
-}`} />
+<Code lang="typescript" code={"if (options.requiresAuth && this.getToken) {\n    const token = await this.getToken();\n    if (token) {\n        headers.set(\"Authorization\", \"Bearer \" + token);\n    }\n}"} />
 
 Les routes dont les handlers ne prennent pas de paramètre `auth: JWT` passent `requiresAuth: false` — le client n'envoie aucun en-tête `Authorization` pour elles, même quand un jeton existe.
 
@@ -56,8 +41,7 @@ Les routes dont les handlers ne prennent pas de paramètre `auth: JWT` passent `
 
 Régénérez et vérifiez les deux côtés :
 
-<Code lang="bash" title="Terminal" code={`route-info-builder generate
-rg "TOKEN_KEY|requiresAuth" frontend/src/api/client.ts`} />
+<Code lang="bash" title="Terminal" code={"route-info-builder generate\nrg \"TOKEN_KEY|requiresAuth\" frontend/src/api/client.ts"} />
 
 Vous devriez voir l'import, le câblage `getToken`, et `requiresAuth: true` sur exactement les routes dont les handlers prennent l'extracteur.
 

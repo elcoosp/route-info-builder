@@ -84,43 +84,7 @@ Both files are written only when `generate_client` is enabled **and** `output_pa
 
 ## Full example
 
-<Code lang="toml" code={`controllers_path = "src/controllers"
-controllers_fn   = "routes"
-
-[naming]
-include_method_in_names = true
-path_prefix_to_remove   = "/api"
-variant_case            = "pascal"
-field_case              = "snake"
-word_separators         = "-."
-preserve_numbers        = false
-variant_prefix          = ""
-variant_suffix          = ""
-collision_strategy      = "skip"
-
-[rust]
-output_file  = "src/generated/links.rs"
-enum_name    = "Link"
-derive_serde = false
-
-[typescript]
-generate_client = true
-output_path     = "frontend/src/api"
-client_file     = "client.ts"
-hooks_file      = "api.ts"
-bindings_path   = "../../../bindings"
-
-[typescript.auth]
-token_key_import = "TOKEN_KEY"
-import_from      = "@/hooks/use-auth"
-
-[openapi]
-output_path = "openapi.json"
-title       = "My API"
-version     = "0.1.0"
-
-[route_map]
-output_path = "routes.json"`} />
+<Code lang="toml" code={"controllers_path = \"src/controllers\"\ncontrollers_fn   = \"routes\"\n\n[naming]\ninclude_method_in_names = true\npath_prefix_to_remove   = \"/api\"\nvariant_case            = \"pascal\"\nfield_case              = \"snake\"\nword_separators         = \"-.\"\npreserve_numbers        = false\nvariant_prefix          = \"\"\nvariant_suffix          = \"\"\ncollision_strategy      = \"skip\"\n\n[rust]\noutput_file  = \"src/generated/links.rs\"\nenum_name    = \"Link\"\nderive_serde = false\n\n[typescript]\ngenerate_client = true\noutput_path     = \"frontend/src/api\"\nclient_file     = \"client.ts\"\nhooks_file      = \"api.ts\"\nbindings_path   = \"../../../bindings\"\n\n[typescript.auth]\ntoken_key_import = \"TOKEN_KEY\"\nimport_from      = \"@/hooks/use-auth\"\n\n[openapi]\noutput_path = \"openapi.json\"\ntitle       = \"My API\"\nversion     = \"0.1.0\"\n\n[route_map]\noutput_path = \"routes.json\""} />
 
 <Aside type="caution">
   Unknown keys anywhere in the file — top level or inside a table — are rejected: `invalid configuration: unknown field …`. The same applies to unknown `[naming]` keys and to a `collision_strategy` value outside the three accepted spellings.

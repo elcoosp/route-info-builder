@@ -15,8 +15,7 @@ Ce guide vous montre comment contrôler les noms que le générateur produit : q
 
 ## Raccourcir les noms en retirant un préfixe de chemin
 
-<Code lang="toml" title="route-info.toml" code={`[naming]
-path_prefix_to_remove = "/api"`} />
+<Code lang="toml" title="route-info.toml" code={"[naming]\npath_prefix_to_remove = \"/api\""} />
 
 `GET /api/users` produit alors la variante `GetUsers` tandis que `to_path()` renvoie toujours `/api/users`. La correspondance de préfixe est consciente des segments : retirer `/user` ne touche pas une route `/users`.
 
@@ -24,16 +23,13 @@ path_prefix_to_remove = "/api"`} />
 
 Par défaut la méthode fait partie de chaque nom de base, ce qui explique pourquoi `GET /api/users` et `POST /api/users` deviennent `GetApiUsers` et `PostApiUsers`. Retirez-la quand vos routes n'entrent pas en collision sans elle :
 
-<Code lang="toml" code={`[naming]
-include_method_in_names = false`} />
+<Code lang="toml" code={"[naming]\ninclude_method_in_names = false"} />
 
 Avec des collisions probables (un chemin, plusieurs verbes), préférez une [stratégie de collision]() au retrait de la méthode.
 
 ## Changer la casse
 
-<Code lang="toml" code={`[naming]
-variant_case = "pascal" # variantes d'énumération, par défaut
-field_case   = "snake"  # champs de paramètres, par défaut`} />
+<Code lang="toml" code={"[naming]\nvariant_case = \"pascal\" # variantes d'\u00e9num\u00e9ration, par d\u00e9faut\nfield_case   = \"snake\"  # champs de param\u00e8tres, par d\u00e9faut"} />
 
 Graphies acceptées pour les deux clés : `camel`/`camelCase`, `pascal`/`PascalCase`, `snake`/`snake_case`, `kebab`/`kebab-case`, `title`/`Title Case`, `lower`/`lowercase`, `upper`/`uppercase`. Une graphie inconnue retombe sur le défaut de cette clé.
 
@@ -43,15 +39,11 @@ Graphies acceptées pour les deux clés : `camel`/`camelCase`, `pascal`/`PascalC
 
 `convert_case` traite un chiffre comme une frontière de mot par défaut, donc `/api/v1/users` devient `GetApiV_1Users` en pascal ou `v_1` en casse snake. Réglez la clé sur `false` pour coller les chiffres au mot précédent :
 
-<Code lang="toml" code={`[naming]
-preserve_numbers = false # v1 pas v_1`} />
+<Code lang="toml" code={"[naming]\npreserve_numbers = false # v1 pas v_1"} />
 
 ## Ajouter préfixes, suffixes et séparateurs supplémentaires
 
-<Code lang="toml" code={`[naming]
-variant_prefix  = "Api"    # ApiGetUsers
-variant_suffix  = "Route"  # GetUsersRoute
-word_separators = "+~"     # caractères supplémentaires traités comme séparateurs de mots`} />
+<Code lang="toml" code={"[naming]\nvariant_prefix  = \"Api\"    # ApiGetUsers\nvariant_suffix  = \"Route\"  # GetUsersRoute\nword_separators = \"+~\"     # caract\u00e8res suppl\u00e9mentaires trait\u00e9s comme s\u00e9parateurs de mots"} />
 
 `/`, `-`, `.` et `:` agissent toujours comme séparateurs ; `word_separators` ajoute d'autres caractères par-dessus cet ensemble.
 
@@ -59,8 +51,7 @@ word_separators = "+~"     # caractères supplémentaires traités comme sépara
 
 Deux routes peuvent produire le même nom de base — par exemple `GET /users/deactivated` et un paramètre de chemin se mappant tous deux sur `GetUsers`. Choisissez ce que fait le générateur :
 
-<Code lang="toml" code={`[naming]
-collision_strategy = "skip" # skip | append-method | number`} />
+<Code lang="toml" code={"[naming]\ncollision_strategy = \"skip\" # skip | append-method | number"} />
 
 | Stratégie | Comportement |
 | :--- | :--- |
@@ -76,7 +67,7 @@ collision_strategy = "skip" # skip | append-method | number`} />
 
 Reconstruisez ou relancez `route-info-builder generate`, puis cherchez vos variantes dans le fichier Rust généré :
 
-<Code lang="bash" title="Terminal" code={`rg "pub enum Link" -A 12 src/links.rs`} />
+<Code lang="bash" title="Terminal" code={"rg \"pub enum Link\" -A 12 src/links.rs"} />
 
 <Aside type="note">
   `name()` sur chaque variante renvoie la forme camelCase du même nom que le client TypeScript utilise comme clé de méthode. Renommer les variantes renomme donc aussi les méthodes du client et les clés TanStack Query.

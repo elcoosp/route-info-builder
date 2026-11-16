@@ -38,23 +38,7 @@ Cette page décrit la carte de routes JSON : la forme sérialisable de chaque `R
 
 ## Exemple d'enregistrement
 
-<Code lang="json" code={`{
-  "name": "get_api_users_user_id",
-  "path": "/api/users/{user_id}",
-  "method": "GET",
-  "handler": "get_user",
-  "handlerInfo": {
-    "bodyParam": null,
-    "queryParams": null,
-    "requiresAuth": true,
-    "returnType": {
-      "foundType": "UserResponse",
-      "isImportable": true,
-      "errorTypes": ["BadRequest"],
-      "errorVariants": ["BadRequest::EmailAlreadyExists"]
-    }
-  }
-}`} />
+<Code lang="json" code={"{\n  \"name\": \"get_api_users_user_id\",\n  \"path\": \"/api/users/{user_id}\",\n  \"method\": \"GET\",\n  \"handler\": \"get_user\",\n  \"handlerInfo\": {\n    \"bodyParam\": null,\n    \"queryParams\": null,\n    \"requiresAuth\": true,\n    \"returnType\": {\n      \"foundType\": \"UserResponse\",\n      \"isImportable\": true,\n      \"errorTypes\": [\"BadRequest\"],\n      \"errorVariants\": [\"BadRequest::EmailAlreadyExists\"]\n    }\n  }\n}"} />
 
 ## Déterminisme
 
