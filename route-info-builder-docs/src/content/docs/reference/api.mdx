@@ -118,11 +118,11 @@ Each generator also exposes a `generate_named(&[NamedRoute], config)` entry poin
 
 | Variant | Message pattern | Source |
 | :--- | :--- | :--- |
-| `ReadDir` | `failed to read controllers directory \`{path}\`` | `std::io::Error` |
-| `ReadFile` | `failed to read controller file \`{path}\`` | `std::io::Error` |
-| `CreateDir` | `failed to create output directory \`{path}\`` | `std::io::Error` |
-| `WriteFile` | `failed to write output file \`{path}\`` | `std::io::Error` |
-| `Parse` | `failed to parse controller file \`{path}\`` | `syn::Error` |
+| `ReadDir` | `failed to read controllers directory "{path}"` | `std::io::Error` |
+| `ReadFile` | `failed to read controller file "{path}"` | `std::io::Error` |
+| `CreateDir` | `failed to create output directory "{path}"` | `std::io::Error` |
+| `WriteFile` | `failed to write output file "{path}"` | `std::io::Error` |
+| `Parse` | `failed to parse controller file "{path}"` | `syn::Error` |
 | `Config` | `invalid configuration: {0}` | `toml::de::Error` |
 | `Json` | `failed to serialize generated data: {0}` | `serde_json::Error` |
 
