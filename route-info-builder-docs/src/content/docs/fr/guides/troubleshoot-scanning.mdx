@@ -22,7 +22,7 @@ Vérifiez les quatre règles que le scanner applique lors de la collecte des rou
 
 3. **Forme d'instruction.** Les appels d'enregistrement doivent apparaître comme des expressions dans le corps de la fonction — une expression chaînée ou une instruction par appel. Les routes construites à travers des liaisons `let` et seulement renvoyées à la fin ne sont pas vues. Réécrivez en chaîne d'instructions :
 
-    <Code lang="rust" code={`// Non vu : le routeur est assemblé à travers des liaisons let.
+    <Code lang="rust" title="users.rs" code={`// Non vu : le routeur est assemblé à travers des liaisons let.
 let router = Router::new();
 let router = router.route("/api/users", get(list_users));
 router

@@ -99,7 +99,7 @@ Because the Rust enum, the TypeScript client and hooks, and the OpenAPI document
 
 Every generator implements the `CodeGenerator` trait:
 
-<Code lang="rust" code={`pub trait CodeGenerator {
+<Code lang="rust" title="src/lib.rs" code={`pub trait CodeGenerator {
     type Config;
     type Output;
     fn generate(routes: &[RouteInfo], config: &Self::Config) -> Result<Self::Output>;

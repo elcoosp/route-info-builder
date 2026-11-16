@@ -15,7 +15,7 @@ This guide shows you how to control the names the generator produces: which meth
 
 ## Shorten names by removing a path prefix
 
-<Code lang="toml" code={`[naming]
+<Code lang="toml" title="route-info.toml" code={`[naming]
 path_prefix_to_remove = "/api"`} />
 
 `GET /api/users` then produces the variant `GetUsers` while `to_path()` still returns `/api/users`. Prefix matching is segment-aware: removing `/user` does not touch a `/users` route.

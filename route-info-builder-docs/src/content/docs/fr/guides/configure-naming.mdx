@@ -15,7 +15,7 @@ Ce guide vous montre comment contrôler les noms que le générateur produit : q
 
 ## Raccourcir les noms en retirant un préfixe de chemin
 
-<Code lang="toml" code={`[naming]
+<Code lang="toml" title="route-info.toml" code={`[naming]
 path_prefix_to_remove = "/api"`} />
 
 `GET /api/users` produit alors la variante `GetUsers` tandis que `to_path()` renvoie toujours `/api/users`. La correspondance de préfixe est consciente des segments : retirer `/user` ne touche pas une route `/users`.

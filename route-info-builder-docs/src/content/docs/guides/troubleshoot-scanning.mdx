@@ -22,7 +22,7 @@ Check the four rules the scanner applies when collecting routes:
 
 3. **Statement shape.** Registration calls must appear as expressions in the function body — one chained expression or one statement per call. Routes built across `let` bindings and only returned at the end are not seen. Rewrite as a statement chain:
 
-    <Code lang="rust" code={`// Not seen: the router is assembled across let bindings.
+    <Code lang="rust" title="users.rs" code={`// Not seen: the router is assembled across let bindings.
 let router = Router::new();
 let router = router.route("/api/users", get(list_users));
 router
