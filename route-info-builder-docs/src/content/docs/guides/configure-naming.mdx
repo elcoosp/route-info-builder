@@ -76,7 +76,7 @@ collision_strategy = "skip" # skip | append-method | number`} />
 
 Rebuild or re-run `route-info-builder generate`, then search the generated Rust file for your variants:
 
-<Code lang="bash" code={`rg "pub enum Link" -A 12 src/links.rs`} />
+<Code lang="bash" title="Terminal" code={`rg "pub enum Link" -A 12 src/links.rs`} />
 
 <Aside type="note">
   `name()` on every variant returns the camelCase form of the same name the TypeScript client uses as its method key. Renaming variants therefore renames the client methods and the TanStack Query keys with them.

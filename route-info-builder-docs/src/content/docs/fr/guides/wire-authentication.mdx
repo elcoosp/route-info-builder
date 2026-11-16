@@ -17,13 +17,13 @@ Ce guide vous montre comment connecter le client généré au jeton d'auth de vo
 
 Ajoutez la table `auth` à `[typescript]` dans `route-info.toml` :
 
-<Code lang="toml" code={`[typescript.auth]
+<Code lang="toml" title="route-info.toml" code={`[typescript.auth]
 token_key_import = "TOKEN_KEY"       # nom de constante, par défaut TOKEN_KEY
 import_from      = "@/hooks/use-auth"`} />
 
 `import_from` est ce qui bascule le client d'anonyme à authentifié : il nomme le module depuis lequel la constante est importée. Le `client.ts` généré contient alors :
 
-<Code lang="typescript" code={`import { TOKEN_KEY } from "@/hooks/use-auth";
+<Code lang="typescript" title="client.ts" code={`import { TOKEN_KEY } from "@/hooks/use-auth";
 
 export const apiClient = new ApiClient({
     getToken: async () => {
@@ -56,7 +56,7 @@ Les routes dont les handlers ne prennent pas de paramètre `auth: JWT` passent `
 
 Régénérez et vérifiez les deux côtés :
 
-<Code lang="bash" code={`route-info-builder generate
+<Code lang="bash" title="Terminal" code={`route-info-builder generate
 rg "TOKEN_KEY|requiresAuth" frontend/src/api/client.ts`} />
 
 Vous devriez voir l'import, le câblage `getToken`, et `requiresAuth: true` sur exactement les routes dont les handlers prennent l'extracteur.

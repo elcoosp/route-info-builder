@@ -15,23 +15,23 @@ Ce guide vous montre comment produire l'énumération de liens Rust, le client e
 
 ## Installer le binaire
 
-<Code lang="bash" code={`cargo install route-info-builder`} />
+<Code lang="bash" title="Terminal" code={`cargo install route-info-builder`} />
 
 Le binaire est une fonctionnalité par défaut de la crate. Les consommateurs de la bibliothèque qui n'en veulent jamais peuvent construire avec `default-features = false` pour retirer `clap` de l'arbre de dépendances.
 
 ## Échafauder un fichier de configuration
 
-<Code lang="bash" code={`route-info-builder init`} />
+<Code lang="bash" title="Terminal" code={`route-info-builder init`} />
 
 Vous devriez maintenant voir un `route-info.toml` dans le répertoire de travail contenant la configuration de démarrage. La commande refuse d'écraser un fichier existant ; passez `--force` quand vous voulez le remplacer :
 
-<Code lang="bash" code={`route-info-builder init --force`} />
+<Code lang="bash" title="Terminal" code={`route-info-builder init --force`} />
 
 `init` accepte un chemin positionnel (par défaut `route-info.toml`). Éditez le fichier généré pour que `controllers_path` pointe sur votre dossier de contrôleurs — la valeur de démarrage est `src/controllers`.
 
 ## Générer chaque sortie configurée
 
-<Code lang="bash" code={`route-info-builder generate`} />
+<Code lang="bash" title="Terminal" code={`route-info-builder generate`} />
 
 Vous devriez voir un résumé comme :
 
@@ -59,15 +59,15 @@ Chaque drapeau `generate` remplace la clé de configuration correspondante pour 
 
 Par exemple, pour générer le client TypeScript dans un autre checkout sans toucher à la configuration :
 
-<Code lang="bash" code={`route-info-builder generate --ts-dir ../other-frontend/src/api`} />
+<Code lang="bash" title="Terminal" code={`route-info-builder generate --ts-dir ../other-frontend/src/api`} />
 
 ## Inspecter les routes scannées
 
-<Code lang="bash" code={`route-info-builder scan`} />
+<Code lang="bash" title="Terminal" code={`route-info-builder scan`} />
 
 Imprime la carte de routes JSON sur stdout — les mêmes enregistrements que `route_map.output_path` écrit sur disque. Redirigez-la dans l'outil de votre choix :
 
-<Code lang="bash" code={`route-info-builder scan | jq '.[].path'`} />
+<Code lang="bash" title="Terminal" code={`route-info-builder scan | jq '.[].path'`} />
 
 <Aside type="caution">
   Un scan échoue quand le dossier de contrôleurs ne peut pas être lu ou qu'un fichier de contrôleur n'est pas du Rust valide. Le message d'erreur nomme le fichier.

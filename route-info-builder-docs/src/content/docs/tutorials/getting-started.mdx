@@ -18,13 +18,13 @@ This tutorial takes you from an empty Rust project to generated routing artifact
 
 1. **Create the Axum project and one controller file.**
 
-    <Code lang="bash" code={`cargo new shop-api
+    <Code lang="bash" title="Terminal" code={`cargo new shop-api
 cd shop-api
 mkdir -p src/controllers`} />
 
     Add the runtime dependencies to `Cargo.toml`:
 
-    <Code lang="toml" code={`[dependencies]
+    <Code lang="toml" title="Cargo.toml" code={`[dependencies]
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 
@@ -33,7 +33,7 @@ route-info-builder = "0.2"`} />
 
     Create the controller `src/controllers/users.rs`. The scanner looks for a function named `routes` inside every `*.rs` file under your controllers folder:
 
-    <Code lang="rust" code={`use axum::routing::{get, post};
+    <Code lang="rust" title="src/controllers/users.rs" code={`use axum::routing::{get, post};
 use axum::Router;
 
 pub fn routes() -> Router {
@@ -70,7 +70,7 @@ async fn get_user() -> &'static str {
 
     Create `build.rs` in the project root. Every field below is a real configuration key; `Config` implements `Default`, so you only set what you need:
 
-    <Code lang="rust" code={`use route_info_builder::{Config, RustConfig, TypeScriptConfig};
+    <Code lang="rust" title="build.rs" code={`use route_info_builder::{Config, RustConfig, TypeScriptConfig};
 
 fn main() {
 let config = Config {
@@ -94,7 +94,7 @@ route_info_builder::generate_links(&config).expect("failed to generate route lin
 
 3. **Generate the artifacts.**
 
-    <Code lang="bash" code={`cargo build`} />
+    <Code lang="bash" title="Terminal" code={`cargo build`} />
 
     You should now see the generated files, and Cargo prints the scanner's build-time note about the TypeScript client:
 
@@ -115,7 +115,7 @@ route_info_builder::generate_links(&config).expect("failed to generate route lin
 
     Open `src/links.rs`. You should see one enum with one variant per route — the method is part of the name by default, and path parameters become fields:
 
-    <Code lang="rust" code={`pub enum Link {
+    <Code lang="rust" title="src/links.rs" code={`pub enum Link {
 GetApiUsers,
 PostApiUsers,
 GetApiUsersUserId { user_id: String },
@@ -127,7 +127,7 @@ GetApiUsersUserId { user_id: String },
 
     Declare the generated module in `src/main.rs` and try the three methods every variant carries:
 
-    <Code lang="rust" code={`mod links;
+    <Code lang="rust" title="src/main.rs" code={`mod links;
 
 use links::Link;
 
@@ -142,7 +142,7 @@ println!("Name: {}", user_link.name()); // getApiUsersUserId
 
     Run it:
 
-    <Code lang="bash" code={`cargo run`} />
+    <Code lang="bash" title="Terminal" code={`cargo run`} />
 
     <Code lang="ansi" code={`Path: /api/users/123
 Method: GET
@@ -156,19 +156,19 @@ Name: getApiUsersUserId`} />
 
     <Tabs>
     <TabItem label="pnpm">
-      <Code lang="bash" code={`pnpm create vite@latest web --template react-ts
+      <Code lang="bash" title="Terminal" code={`pnpm create vite@latest web --template react-ts
 cd web
 pnpm install
 pnpm add @tanstack/react-query`} />
     </TabItem>
     <TabItem label="npm">
-      <Code lang="bash" code={`npm create vite@latest web -- --template react-ts
+      <Code lang="bash" title="Terminal" code={`npm create vite@latest web -- --template react-ts
 cd web
 npm install
 npm install @tanstack/react-query`} />
     </TabItem>
     <TabItem label="yarn">
-      <Code lang="bash" code={`yarn create vite@latest web --template react-ts
+      <Code lang="bash" title="Terminal" code={`yarn create vite@latest web --template react-ts
 cd web
 yarn install
 yarn add @tanstack/react-query`} />
@@ -179,7 +179,7 @@ yarn add @tanstack/react-query`} />
 
     The generated `api.ts` exposes one hook per route: `useQuery` hooks for GET routes and `useMutation` hooks for everything else. Replace the contents of `web/src/main.tsx`:
 
-    <Code lang="tsx" code={`import { StrictMode } from "react";
+    <Code lang="tsx" title="web/src/main.tsx" code={`import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
@@ -197,7 +197,7 @@ createRoot(document.getElementById("root")!).render(
 
     Replace `web/src/App.tsx`:
 
-    <Code lang="tsx" code={`import { useGetApiUsers, useGetApiUsersUserId } from "./api/api";
+    <Code lang="tsx" title="web/src/App.tsx" code={`import { useGetApiUsers, useGetApiUsersUserId } from "./api/api";
 
 export default function App() {
 const { data: users, isLoading } = useGetApiUsers();
@@ -218,7 +218,7 @@ return (
 
     Build the frontend to confirm everything type-checks:
 
-    <Code lang="bash" code={`pnpm build`} />
+    <Code lang="bash" title="Terminal" code={`pnpm build`} />
 
     You should see Vite finish without type errors. The generated hooks compile inside your app with no additional wiring: the client module is self-contained and handles headers, JSON parsing, 204 responses and error transformation itself.
 
