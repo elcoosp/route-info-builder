@@ -1,6 +1,7 @@
 import { defineDocsConfig } from '@elcoosp/docs-toolkit/config';
 
 export default await defineDocsConfig({
+  topics: true,
   llmsTxt: {},
   site: 'https://route-info-builder.vercel.app',
   domain: 'route-info-builder.vercel.app',
