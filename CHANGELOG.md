@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## Bug Fixes
+### Bug Fixes
 
 
 - No screaming case (7f736a1)
@@ -21,13 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Return null if 204 not as T (9fba80c)
 - *(deps)* [**breaking**] Update all dependencies and drop the broken ts_quote path dependency (d24f07c)
 
-## Documentation
+### Documentation
 
 
 - Add readme (bccafd4)
 - Rewrite the README against the real API and record the brainstorm (ddfbff2)
 
-## Features
+### Features
 
 
 - Use ts_quote with edition 2024 (6b1f286)
@@ -45,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(generators)* [**breaking**] Single-path code generation, OpenAPI skeletons and route maps (65b325a)
 - *(cli)* Add route-info-builder binary with generate, scan and init (fb7bc65)
 
-## Miscellaneous Tasks
+### Miscellaneous Tasks
 
 
 - Init (8dec208)
@@ -53,7 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Readme (c98a5b9)
 - GitHub Actions pipelines, git-cliff changelog and dependabot (f92049f)
 
-## Tests
+### Tests
 
 
 - Cover the crate to 100% line coverage (6aa35fc)

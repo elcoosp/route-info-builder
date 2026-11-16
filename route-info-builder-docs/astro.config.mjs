@@ -6,12 +6,10 @@ export default await defineDocsConfig({
   domain: 'route-info-builder.vercel.app',
   title: "Route Info Builder",
   description: "Build-time route scanner for Axum-like frameworks: type-safe Rust link enums, TypeScript clients with TanStack Query hooks, OpenAPI 3.1 skeletons and JSON route maps.",
-  sidebar: [],
   extraStarlight: {
                         title: 'Route Info Builder',
                         description:
                                 'Build-time route scanner for Axum-like frameworks: type-safe Rust link enums, TypeScript clients with TanStack Query hooks, OpenAPI 3.1 skeletons and JSON route maps.',
-                        favicon: '/favicon.png',
                         social: [
                                 {
                                         icon: 'github',
@@ -26,7 +24,6 @@ export default await defineDocsConfig({
                                                 // The 404 page is a content page (src/content/docs/404.md) rendered
                         // through the [...slug] route; Starlight's injected 404 route is
                         // disabled to avoid the two routes conflicting.
-                        disable404Route: true,
                         sidebar: [
                                 {
                                         label: 'Tutorials',
@@ -59,8 +56,5 @@ export default await defineDocsConfig({
                                         ]
                                 },
                         ],
-                        expressiveCode: {
-                                themes: ['github-light', 'github-dark']
-                        }
                 },
 });
