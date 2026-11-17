@@ -16,13 +16,13 @@ Check the four rules the scanner applies when collecting routes:
 
 1. **Function name.** Only a function named `routes` is read. A controller whose builder function is called something else is invisible until you say so:
 
-    <Code lang="toml" code={"controllers_fn = \"api_routes\""} />
+   <Code lang="toml" code={"controllers_fn = \"api_routes\""} />
 
 2. **File name.** `mod.rs` files and dot-files are skipped; only `*.rs` files are considered (case-insensitive extension). Rename `mod.rs` content into a regular file such as `users.rs`.
 
 3. **Statement shape.** Registration calls must appear as expressions in the function body — one chained expression or one statement per call. Routes built across `let` bindings and only returned at the end are not seen. Rewrite as a statement chain:
 
-    <Code lang="rust" title="users.rs" code={"// Not seen: the router is assembled across let bindings.\nlet router = Router::new();\nlet router = router.route(\"/api/users\", get(list_users));\nrouter\n\n// Seen: each registration is its own statement expression.\nlet router = Router::new();\nrouter.route(\"/api/users\", get(list_users))"} />
+   <Code lang="rust" title="users.rs" code={"// Not seen: the router is assembled across let bindings.\nlet router = Router::new();\nlet router = router.route(\"/api/users\", get(list_users));\nrouter\n\n// Seen: each registration is its own statement expression.\nlet router = Router::new();\nrouter.route(\"/api/users\", get(list_users))"} />
 
 4. **Path syntax.** Both `{param}` and legacy `:param` are understood and canonicalized, so a legacy route still appears — but under its canonical form (`/items/{item_id}`).
 

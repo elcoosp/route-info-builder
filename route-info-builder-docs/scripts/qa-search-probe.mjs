@@ -24,6 +24,6 @@ const results = await page.locator('mark').allInnerTexts();
 const titles = await page.locator('.pagefind-ui__result-title a, dialog a').allInnerTexts();
 
 console.log(
-	JSON.stringify({ modalOpened: true, marks: results.slice(0, 6), linkTexts: titles.slice(0, 6) }, null, 2),
+  JSON.stringify({ modalOpened: true, marks: results.slice(0, 6), linkTexts: titles.slice(0, 6) }, null, 2),
 );
 await browser.close();

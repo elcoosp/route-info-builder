@@ -11,15 +11,15 @@
  */
 
 :root {
-        --sl-color-accent-low: hsl(0 30% 93%);
-        --sl-color-accent: hsl(0 30% 35%);
-        --sl-color-accent-high: hsl(0 30% 28%);
+  --sl-color-accent-low: hsl(0 30% 93%);
+  --sl-color-accent: hsl(0 30% 35%);
+  --sl-color-accent-high: hsl(0 30% 28%);
 }
 
 [data-theme='dark'] {
-        --sl-color-accent-low: hsl(0 30% 16%);
-        --sl-color-accent: hsl(0 30% 60%);
-        --sl-color-accent-high: hsl(0 30% 75%);
+  --sl-color-accent-low: hsl(0 30% 16%);
+  --sl-color-accent: hsl(0 30% 60%);
+  --sl-color-accent-high: hsl(0 30% 75%);
 }
 
 /*
@@ -30,9 +30,9 @@
  */
 [data-theme='dark'] .site-title img,
 [data-theme='dark'] .hero img {
-        background: hsl(33 40% 92%);
-        border-radius: 0.4rem;
-        padding: 0.2rem;
+  background: hsl(33 40% 92%);
+  border-radius: 0.4rem;
+  padding: 0.2rem;
 }
 
 /* hero-image-polish */
@@ -42,9 +42,12 @@
    a mis-placed image with a square background. */
 .hero img {
   border-radius: 1.25rem;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.08),
+    0 0 0 1px rgba(0, 0, 0, 0.04);
 }
 [data-theme='dark'] .hero img {
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.08);
 }
-

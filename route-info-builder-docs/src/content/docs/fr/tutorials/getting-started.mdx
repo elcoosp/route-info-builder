@@ -18,46 +18,46 @@ Ce tutoriel vous emmène d'un projet Rust vide à des artefacts de routage gén�
 
 1. **Créer le projet Axum et un fichier de contrôleur.**
 
-    <Code lang="bash" title="Terminal" code={"cargo new shop-api\ncd shop-api\nmkdir -p src/controllers"} />
+   <Code lang="bash" title="Terminal" code={"cargo new shop-api\ncd shop-api\nmkdir -p src/controllers"} />
 
-    Ajoutez les dépendances d'exécution à `Cargo.toml` :
+   Ajoutez les dépendances d'exécution à `Cargo.toml` :
 
-    <Code lang="toml" title="Cargo.toml" code={"[dependencies]\naxum = \"0.8\"\ntokio = { version = \"1\", features = [\"full\"] }\n\n[build-dependencies]\nroute-info-builder = \"0.2\""} />
+   <Code lang="toml" title="Cargo.toml" code={"[dependencies]\naxum = \"0.8\"\ntokio = { version = \"1\", features = [\"full\"] }\n\n[build-dependencies]\nroute-info-builder = \"0.2\""} />
 
-    Créez le contrôleur `src/controllers/users.rs`. Le scanner recherche une fonction nommée `routes` à l'intérieur de chaque fichier `*.rs` sous votre dossier de contrôleurs :
+   Créez le contrôleur `src/controllers/users.rs`. Le scanner recherche une fonction nommée `routes` à l'intérieur de chaque fichier `*.rs` sous votre dossier de contrôleurs :
 
-    <Code lang="rust" title="src/controllers/users.rs" code={"use axum::routing::{get, post};\nuse axum::Router;\n\npub fn routes() -> Router {\nRouter::new()\n    .route(\"/api/users\", get(list_users))\n    .route(\"/api/users\", post(create_user))\n    .route(\"/api/users/{user_id}\", get(get_user))\n}\n\nasync fn list_users() -> &'static str {\n\"[]\"\n}\n\nasync fn create_user() -> &'static str {\n\"created\"\n}\n\nasync fn get_user() -> &'static str {\n\"user\"\n}"} />
+   <Code lang="rust" title="src/controllers/users.rs" code={"use axum::routing::{get, post};\nuse axum::Router;\n\npub fn routes() -> Router {\nRouter::new()\n    .route(\"/api/users\", get(list_users))\n    .route(\"/api/users\", post(create_user))\n    .route(\"/api/users/{user_id}\", get(get_user))\n}\n\nasync fn list_users() -> &'static str {\n\"[]\"\n}\n\nasync fn create_user() -> &'static str {\n\"created\"\n}\n\nasync fn get_user() -> &'static str {\n\"user\"\n}"} />
 
-    Votre projet ressemble maintenant à ceci :
+   Votre projet ressemble maintenant à ceci :
 
-    <FileTree>
+   <FileTree>
     - shop-api
         - src
             - controllers
                 - users.rs
             - main.rs
         - Cargo.toml
-    </FileTree>
+   </FileTree>
 
 2. **Écrire le script de build.**
 
-    Créez `build.rs` à la racine du projet. Chaque champ ci-dessous est une vraie clé de configuration ; `Config` implémente `Default`, donc vous ne définissez que ce dont vous avez besoin :
+   Créez `build.rs` à la racine du projet. Chaque champ ci-dessous est une vraie clé de configuration ; `Config` implémente `Default`, donc vous ne définissez que ce dont vous avez besoin :
 
-    <Code lang="rust" title="build.rs" code={"use route_info_builder::{Config, RustConfig, TypeScriptConfig};\n\nfn main() {\nlet config = Config {\n    controllers_path: \"src/controllers\".into(),\n    rust: RustConfig {\n        output_file: Some(\"src/links.rs\".into()),\n        ..RustConfig::default()\n    },\n    typescript: TypeScriptConfig {\n        generate_client: Some(true),\n        output_path: Some(\"../web/src/api\".into()),\n        ..TypeScriptConfig::default()\n    },\n    ..Config::default()\n};\n\nroute_info_builder::generate_links(&config).expect(\"failed to generate route links\");\n}"} />
+   <Code lang="rust" title="build.rs" code={"use route_info_builder::{Config, RustConfig, TypeScriptConfig};\n\nfn main() {\nlet config = Config {\n    controllers_path: \"src/controllers\".into(),\n    rust: RustConfig {\n        output_file: Some(\"src/links.rs\".into()),\n        ..RustConfig::default()\n    },\n    typescript: TypeScriptConfig {\n        generate_client: Some(true),\n        output_path: Some(\"../web/src/api\".into()),\n        ..TypeScriptConfig::default()\n    },\n    ..Config::default()\n};\n\nroute_info_builder::generate_links(&config).expect(\"failed to generate route links\");\n}"} />
 
-    Cet appel unique scanne une fois, renvoie le code Rust généré, et écrit chaque sortie configurée sur disque, en créant les répertoires parents au besoin.
+   Cet appel unique scanne une fois, renvoie le code Rust généré, et écrit chaque sortie configurée sur disque, en créant les répertoires parents au besoin.
 
 3. **Générer les artefacts.**
 
-    <Code lang="bash" title="Terminal" code={"cargo build"} />
+   <Code lang="bash" title="Terminal" code={"cargo build"} />
 
-    Vous devriez maintenant voir les fichiers générés, et Cargo imprime la note du scanner au build à propos du client TypeScript :
+   Vous devriez maintenant voir les fichiers générés, et Cargo imprime la note du scanner au build à propos du client TypeScript :
 
-    <Code lang="ansi" code={"\u200bwarning: route-info-builder: generated TypeScript client at ../web/src/api"} />
+   <Code lang="ansi" code={"\u200bwarning: route-info-builder: generated TypeScript client at ../web/src/api"} />
 
-    Votre arbre contient maintenant trois fichiers générés :
+   Votre arbre contient maintenant trois fichiers générés :
 
-    <FileTree>
+   <FileTree>
     - shop-api
         - src
             - controllers
@@ -66,69 +66,69 @@ Ce tutoriel vous emmène d'un projet Rust vide à des artefacts de routage gén�
             - main.rs
         - build.rs
         - Cargo.toml
-    </FileTree>
+   </FileTree>
 
-    Ouvrez `src/links.rs`. Vous devriez voir une énumération avec une variante par route — la méthode fait partie du nom par défaut, et les paramètres de chemin deviennent des champs :
+   Ouvrez `src/links.rs`. Vous devriez voir une énumération avec une variante par route — la méthode fait partie du nom par défaut, et les paramètres de chemin deviennent des champs :
 
-    <Code lang="rust" title="src/links.rs" code={"pub enum Link {\nGetApiUsers,\nPostApiUsers,\nGetApiUsersUserId { user_id: String },\n}"} />
+   <Code lang="rust" title="src/links.rs" code={"pub enum Link {\nGetApiUsers,\nPostApiUsers,\nGetApiUsersUserId { user_id: String },\n}"} />
 
-    Ouvrez `../web/src/api` (il n'existe pas encore, le script de build le crée) : vous devriez trouver `client.ts`, un client HTTP autonome avec méthodes typées, et `api.ts`, les hooks TanStack Query.
+   Ouvrez `../web/src/api` (il n'existe pas encore, le script de build le crée) : vous devriez trouver `client.ts`, un client HTTP autonome avec méthodes typées, et `api.ts`, les hooks TanStack Query.
 
 4. **Utiliser l'énumération `Link` en Rust.**
 
-    Déclarez le module généré dans `src/main.rs` et essayez les trois méthodes que chaque variante porte :
+   Déclarez le module généré dans `src/main.rs` et essayez les trois méthodes que chaque variante porte :
 
-    <Code lang="rust" title="src/main.rs" code={"mod links;\n\nuse links::Link;\n\n#[tokio::main]\nasync fn main() {\nlet user_link = Link::GetApiUsersUserId { user_id: \"123\".to_string() };\n\nprintln!(\"Path: {}\", user_link.to_path()); // /api/users/123\nprintln!(\"Method: {}\", user_link.method()); // GET\nprintln!(\"Name: {}\", user_link.name()); // getApiUsersUserId\n}"} />
+   <Code lang="rust" title="src/main.rs" code={"mod links;\n\nuse links::Link;\n\n#[tokio::main]\nasync fn main() {\nlet user_link = Link::GetApiUsersUserId { user_id: \"123\".to_string() };\n\nprintln!(\"Path: {}\", user_link.to_path()); // /api/users/123\nprintln!(\"Method: {}\", user_link.method()); // GET\nprintln!(\"Name: {}\", user_link.name()); // getApiUsersUserId\n}"} />
 
-    Exécutez :
+   Exécutez :
 
-    <Code lang="bash" title="Terminal" code={"cargo run"} />
+   <Code lang="bash" title="Terminal" code={"cargo run"} />
 
-    <Code lang="ansi" code={"Path: /api/users/123\nMethod: GET\nName: getApiUsersUserId"} />
+   <Code lang="ansi" code={"Path: /api/users/123\nMethod: GET\nName: getApiUsersUserId"} />
 
-    `name()` renvoie la même clé que le client TypeScript utilise, ce qui garde les clés de requête synchronisées entre les deux langages.
+   `name()` renvoie la même clé que le client TypeScript utilise, ce qui garde les clés de requête synchronisées entre les deux langages.
 
 5. **Créer le frontend et installer TanStack Query.**
 
-    Dans un second terminal, toujours dans `shop-api`, échafaudez une application React dans `web/` :
+   Dans un second terminal, toujours dans `shop-api`, échafaudez une application React dans `web/` :
 
-    <Tabs>
-    <TabItem label="pnpm">
-      <Code lang="bash" title="Terminal" code={"pnpm create vite@latest web --template react-ts\ncd web\npnpm install\npnpm add @tanstack/react-query"} />
-    </TabItem>
-    <TabItem label="npm">
-      <Code lang="bash" title="Terminal" code={"npm create vite@latest web -- --template react-ts\ncd web\nnpm install\nnpm install @tanstack/react-query"} />
-    </TabItem>
-    <TabItem label="yarn">
-      <Code lang="bash" title="Terminal" code={"yarn create vite@latest web --template react-ts\ncd web\nyarn install\nyarn add @tanstack/react-query"} />
-    </TabItem>
-    </Tabs>
+   <Tabs>
+   <TabItem label="pnpm">
+   <Code lang="bash" title="Terminal" code={"pnpm create vite@latest web --template react-ts\ncd web\npnpm install\npnpm add @tanstack/react-query"} />
+   </TabItem>
+   <TabItem label="npm">
+   <Code lang="bash" title="Terminal" code={"npm create vite@latest web -- --template react-ts\ncd web\nnpm install\nnpm install @tanstack/react-query"} />
+   </TabItem>
+   <TabItem label="yarn">
+   <Code lang="bash" title="Terminal" code={"yarn create vite@latest web --template react-ts\ncd web\nyarn install\nyarn add @tanstack/react-query"} />
+   </TabItem>
+   </Tabs>
 
 6. **Appeler l'API avec les hooks générés.**
 
-    L'`api.ts` généré expose un hook par route : des hooks `useQuery` pour les routes GET et des hooks `useMutation` pour tout le reste. Remplacez le contenu de `web/src/main.tsx` :
+   L'`api.ts` généré expose un hook par route : des hooks `useQuery` pour les routes GET et des hooks `useMutation` pour tout le reste. Remplacez le contenu de `web/src/main.tsx` :
 
-    <Code lang="tsx" title="web/src/main.tsx" code={"import { StrictMode } from \"react\";\nimport { createRoot } from \"react-dom/client\";\nimport { QueryClient, QueryClientProvider } from \"@tanstack/react-query\";\nimport App from \"./App\";\nimport \"./index.css\";\n\nconst queryClient = new QueryClient();\n\ncreateRoot(document.getElementById(\"root\")!).render(\n<StrictMode>\n    <QueryClientProvider client={queryClient}>\n        <App />\n    </QueryClientProvider>\n</StrictMode>,\n);"} />
+   <Code lang="tsx" title="web/src/main.tsx" code={"import { StrictMode } from \"react\";\nimport { createRoot } from \"react-dom/client\";\nimport { QueryClient, QueryClientProvider } from \"@tanstack/react-query\";\nimport App from \"./App\";\nimport \"./index.css\";\n\nconst queryClient = new QueryClient();\n\ncreateRoot(document.getElementById(\"root\")!).render(\n<StrictMode>\n    <QueryClientProvider client={queryClient}>\n        <App />\n    </QueryClientProvider>\n</StrictMode>,\n);"} />
 
-    Remplacez `web/src/App.tsx` :
+   Remplacez `web/src/App.tsx` :
 
-    <Code lang="tsx" title="web/src/App.tsx" code={"import { useGetApiUsers, useGetApiUsersUserId } from \"./api/api\";\n\nexport default function App() {\nconst { data: users, isLoading } = useGetApiUsers();\nconst { data: user } = useGetApiUsersUserId({ userId: \"1\" });\n\nif (isLoading) return <p>Loading...</p>;\n\nreturn (\n    <main>\n        <h1>Users</h1>\n        <pre>{JSON.stringify(users)}</pre>\n        <pre>{JSON.stringify(user)}</pre>\n    </main>\n);\n}"} />
+   <Code lang="tsx" title="web/src/App.tsx" code={"import { useGetApiUsers, useGetApiUsersUserId } from \"./api/api\";\n\nexport default function App() {\nconst { data: users, isLoading } = useGetApiUsers();\nconst { data: user } = useGetApiUsersUserId({ userId: \"1\" });\n\nif (isLoading) return <p>Loading...</p>;\n\nreturn (\n    <main>\n        <h1>Users</h1>\n        <pre>{JSON.stringify(users)}</pre>\n        <pre>{JSON.stringify(user)}</pre>\n    </main>\n);\n}"} />
 
-    Le second hook prend un objet de paramètres typé — le générateur a émis une interface `GetApiUsersUserIdParams` avec un champ `userId: string` issu du segment de chemin `{user_id}`.
+   Le second hook prend un objet de paramètres typé — le générateur a émis une interface `GetApiUsersUserIdParams` avec un champ `userId: string` issu du segment de chemin `{user_id}`.
 
-    Construisez le frontend pour confirmer que tout vérifie ses types :
+   Construisez le frontend pour confirmer que tout vérifie ses types :
 
-    <Code lang="bash" title="Terminal" code={"pnpm build"} />
+   <Code lang="bash" title="Terminal" code={"pnpm build"} />
 
-    Vous devriez voir Vite se terminer sans erreurs de types. Les hooks générés compilent dans votre application sans câblage supplémentaire : le module client est autonome et gère les en-têtes, l'analyse JSON, les réponses 204 et la transformation d'erreur lui-même.
+   Vous devriez voir Vite se terminer sans erreurs de types. Les hooks générés compilent dans votre application sans câblage supplémentaire : le module client est autonome et gère les en-têtes, l'analyse JSON, les réponses 204 et la transformation d'erreur lui-même.
 
-    <Aside type="note">
-    Les hooks affichent ici des types de retour `any` parce que les handlers stub renvoient des chaînes brutes. Le scanner lit aussi les corps de handlers : les conversions `format::json(...)`, les extracteurs `Query<T>`, les corps de style `Json<T>` et les variantes d'erreur renvoyées deviennent tous des types TypeScript. Voir [Comment fonctionne le scan](/explanation/scanning-pipeline/).
-    </Aside>
+   <Aside type="note">
+   Les hooks affichent ici des types de retour `any` parce que les handlers stub renvoient des chaînes brutes. Le scanner lit aussi les corps de handlers : les conversions `format::json(...)`, les extracteurs `Query<T>`, les corps de style `Json<T>` et les variantes d'erreur renvoyées deviennent tous des types TypeScript. Voir [Comment fonctionne le scan](/explanation/scanning-pipeline/).
+   </Aside>
 
 7. **Régénérer après changement de routes.**
 
-    Ajoutez une route à `users.rs`, ou un nouveau fichier de contrôleur, puis relancez `cargo build`. Le scan est déterministe — les fichiers sont visités dans l'ordre trié — donc la sortie ne change que quand vos routes changent.
+   Ajoutez une route à `users.rs`, ou un nouveau fichier de contrôleur, puis relancez `cargo build`. Le scan est déterministe — les fichiers sont visités dans l'ordre trié — donc la sortie ne change que quand vos routes changent.
 
 </Steps>
 
