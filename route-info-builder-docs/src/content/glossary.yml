@@ -1,0 +1,9 @@
+# Curated domain glossary for @elcoosp/docs-toolkit (starlight-term-glossary)
+- term: "route map"
+  locale: en
+  href: "/reference/route-info-json/"
+  definition: "Deterministic JSON artifact recording every discovered endpoint, HTTP method, path parameter, and handler return type."
+- term: "carte des routes"
+  locale: fr
+  href: "/fr/reference/route-info-json/"
+  definition: "Artefact JSON déterministe recensant chaque endpoint, méthode HTTP, paramètre de chemin et type de retour."
