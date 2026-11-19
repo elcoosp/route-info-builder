@@ -1,45 +1,40 @@
 ---
-title: "Route Info Builder (FR)"
-description: "Liens Rust typés, clients TypeScript et squelettes OpenAPI générés à partir de vos contrôleurs Axum existants."
+title: Docs Route Info Builder
+description: Génération de manifestes de routes typés et construction d'URL sûre à la compilation.
 template: splash
 hero:
-  title: Route Info Builder
-  tagline: Un scanner de routes au build pour les frameworks de type Axum — énumérations de liens Rust typées, un client TypeScript typé avec hooks TanStack Query, un squelette OpenAPI 3.1 et une carte de routes JSON, tout depuis vos fichiers de contrôleurs existants.
+  tagline: Définitions de routes typées, interpolation sûre des paramètres et génération d'URL sans coût à l'exécution.
   image:
     file: ../../../assets/logo.png
-    alt: Logo Route Info Builder
   actions:
-    - text: Commencer
-      link: /tutorials/getting-started/
+    - text: Démarrage rapide
+      link: /fr/tutorials/getting-started/
       icon: right-arrow
-    - text: Voir sur GitHub
-      link: https://github.com/elcoosp/route-info-builder
-      icon: external
+      variant: primary
+    - text: Référence configuration
+      link: /fr/reference/configuration/
+      icon: open-book
       variant: minimal
 ---
 
-import { CardGrid, LinkButton, LinkCard } from '@astrojs/starlight/components';
+import { DiataxisGrid, FeatureGrid, StatStrip } from '@elcoosp/docs-toolkit/components';
 
-<CardGrid>
-  <LinkCard
-    title="Tutoriels"
-    description="Apprenez en construisant : d'un projet Axum vide aux appels typés des deux côtés."
-    href="/tutorials/getting-started/"
-  />
-  <LinkCard
-    title="Guides pratiques"
-    description="Résolvez un problème précis : la CLI, les règles de nommage, l'authentification, les échecs de scan."
-    href="/guides/generate-from-cli/"
-  />
-  <LinkCard
-    title="Référence"
-    description="Consultez une clé de configuration, un drapeau CLI, une fonction publique ou la carte de routes JSON."
-    href="/reference/configuration/"
-  />
-  <LinkCard
-    title="Explication"
-    description="Comprenez comment fonctionne le scanner et pourquoi la conception ressemble à ce qu'elle est."
-    href="/explanation/scanning-pipeline/"
-  />
-</CardGrid>
+<StatStrip items={[
+  { value: '100% Typé', label: 'Paramètres vérifiés à la compilation' },
+  { value: '0 Runtime', label: 'Émission de chemins statiques' },
+  { value: 'Déterministe', label: 'Normalisation canonique des URL' },
+  { value: 'Multi-cible', label: 'Adaptateurs TS, Rust et frameworks' },
+]} />
 
+## Fonctionnalités clés
+
+<FeatureGrid items={[
+  { title: 'Constructeurs de chemins typés', description: 'Générez des fonctions fortement typées pour chaque segment dynamique, paramètre optionnel et requête.', icon: 'puzzle' },
+  { title: 'Validation du manifeste', description: 'Détectez les motifs dupliqués, les conflits de segments et les liens internes cassés dès la compilation.', icon: 'approve-check-circle' },
+  { title: 'Sortie indépendante du framework', description: 'Produisez des tables de routes exploitables par Astro, React Router, TanStack Router et vos serveurs.', icon: 'setting' },
+  { title: 'Préfixes de locales i18n', description: 'Générez automatiquement les variantes localisées de chaque route avec correspondance cohérente des slugs.', icon: 'document' },
+]} />
+
+## Explorer la documentation
+
+<DiataxisGrid stagger />

@@ -1,47 +1,40 @@
 ---
-title: "Route Info Builder"
-description: "Type-safe Rust links, TypeScript clients and OpenAPI skeletons generated from your existing Axum controllers."
+title: Route Info Builder
+description: Type-safe route manifest generation and URL builder for typed web routers.
 template: splash
 hero:
-  title: Route Info Builder
-  tagline: A build-time route scanner for Axum-like frameworks — type-safe Rust link enums, a typed TypeScript client with TanStack Query hooks, an OpenAPI 3.1 skeleton and a JSON route map, all from your existing controller files.
+  tagline: Compile-time route definitions, typed parameter interpolation, and zero-runtime-overhead path builders.
   image:
     file: ../../assets/logo.png
-    alt: Route Info Builder logo
   actions:
-    - text: Get started
+    - text: Quick Start
       link: /tutorials/getting-started/
       icon: right-arrow
-    - text: View on GitHub
-      link: https://github.com/elcoosp/route-info-builder
-      icon: external
+      variant: primary
+    - text: Configuration Reference
+      link: /reference/configuration/
+      icon: open-book
       variant: minimal
 ---
 
-import { CardGrid, LinkButton, LinkCard } from '@astrojs/starlight/components';
-import { DiataxisGrid } from '@elcoosp/docs-toolkit/components';
+import { DiataxisGrid, FeatureGrid, StatStrip } from '@elcoosp/docs-toolkit/components';
 
-<CardGrid>
-  <LinkCard
-    title="Tutorials"
-    description="Learn by building: from an empty Axum project to typed calls on both sides."
-    href="/tutorials/getting-started/"
-  />
-  <LinkCard
-    title="How-to guides"
-    description="Solve a specific problem: the CLI, naming rules, authentication, scanning failures."
-    href="/guides/generate-from-cli/"
-  />
-  <LinkCard
-    title="Reference"
-    description="Look up a configuration key, a CLI flag, a public function or the JSON route map."
-    href="/reference/configuration/"
-  />
-  <LinkCard
-    title="Explanation"
-    description="Understand how the scanner works and why the design looks the way it does."
-    href="/explanation/scanning-pipeline/"
-  />
-</CardGrid>
+<StatStrip items={[
+  { value: '100% Typed', label: 'Compile-time route params' },
+  { value: '0 Runtime', label: 'Pure static path emitters' },
+  { value: 'Deterministic', label: 'Canonical URL normalization' },
+  { value: 'Multi-Target', label: 'TS, Rust & framework adapters' },
+]} />
 
+## Core capabilities
 
+<FeatureGrid items={[
+  { title: 'Typed Path & Query Builders', description: 'Generate strongly typed helper functions for every route segment, optional parameter, and search query.', icon: 'puzzle' },
+  { title: 'Manifest Validation', description: 'Catch duplicate patterns, colliding dynamic segments, and broken internal links at build time.', icon: 'approve-check-circle' },
+  { title: 'Framework-Agnostic Output', description: 'Emit clean route tables consumable by Astro, React Router, TanStack Router, and backend servers.', icon: 'setting' },
+  { title: 'I18n Locale Prefixes', description: 'Automatically generate localized route variants with consistent slug mapping across languages.', icon: 'document' },
+]} />
+
+## Explore the documentation
+
+<DiataxisGrid stagger />
