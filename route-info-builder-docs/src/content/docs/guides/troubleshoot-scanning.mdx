@@ -22,7 +22,9 @@ Check the four rules the scanner applies when collecting routes:
 
 3. **Statement shape.** Registration calls must appear as expressions in the function body — one chained expression or one statement per call. Routes built across `let` bindings and only returned at the end are not seen. Rewrite as a statement chain:
 
-   <Code lang="rust" title="users.rs" code={"// Not seen: the router is assembled across let bindings.\nlet router = Router::new();\nlet router = router.route(\"/api/users\", get(list_users));\nrouter\n\n// Seen: each registration is its own statement expression.\nlet router = Router::new();\nrouter.route(\"/api/users\", get(list_users))"} />
+   <Code lang="rust" title="users.rs" code={"// Not seen: the router is assembled across let bindings.\nlet router = Router::new();\nlet router = router.route(\"/api/users\", get(list_users));\nrouter"} />
+
+   <Code lang="rust" title="users.rs" code={"// Seen: each registration is its own statement expression.\nlet router = Router::new();\nrouter.route(\"/api/users\", get(list_users))"} />
 
 4. **Path syntax.** Both `{param}` and legacy `:param` are understood and canonicalized, so a legacy route still appears — but under its canonical form (`/items/{item_id}`).
 

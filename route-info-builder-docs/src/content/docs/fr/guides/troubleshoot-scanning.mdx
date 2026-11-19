@@ -22,7 +22,9 @@ Vérifiez les quatre règles que le scanner applique lors de la collecte des rou
 
 3. **Forme d'instruction.** Les appels d'enregistrement doivent apparaître comme des expressions dans le corps de la fonction — une expression chaînée ou une instruction par appel. Les routes construites à travers des liaisons `let` et seulement renvoyées à la fin ne sont pas vues. Réécrivez en chaîne d'instructions :
 
-   <Code lang="rust" title="users.rs" code={"// Non vu : le routeur est assembl\u00e9 \u00e0 travers des liaisons let.\nlet router = Router::new();\nlet router = router.route(\"/api/users\", get(list_users));\nrouter\n\n// Vu : chaque enregistrement est sa propre instruction d'expression.\nlet router = Router::new();\nrouter.route(\"/api/users\", get(list_users))"} />
+   <Code lang="rust" title="users.rs" code={"// Non vu : le routeur est assembl\u00e9 \u00e0 travers des liaisons let.\nlet router = Router::new();\nlet router = router.route(\"/api/users\", get(list_users));\nrouter"} />
+
+   <Code lang="rust" title="users.rs" code={"// Vu : chaque enregistrement est sa propre instruction d'expression.\nlet router = Router::new();\nrouter.route(\"/api/users\", get(list_users))"} />
 
 4. **Syntaxe de chemin.** `{param}` et `:param` historique sont tous deux compris et canonicalisés, donc une route historique apparaît quand même — mais sous sa forme canonique (`/items/{item_id}`).
 

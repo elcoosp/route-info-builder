@@ -24,7 +24,7 @@ async function collect(dir) {
     if (entry.isDirectory()) files.push(...(await collect(full)));
     else if (/\.(md|mdx)$/.test(entry.name)) files.push(full);
   }
-  return files.sort();
+  return files.toSorted();
 }
 
 /** Splits YAML-ish frontmatter from the body and extracts title/description. */
@@ -34,7 +34,7 @@ function parse(file, text) {
   if (match) {
     for (const line of match[1].split('\n')) {
       const field = /^(title|description):\s*(.+)$/.exec(line);
-      if (field) meta[field[1]] = field[2].replace(/^["']|["']$/g, '');
+      if (field) meta[field[1]] = field[2].replaceAll(/^["']|["']$/g, '');
     }
   }
   let body = match ? text.slice(match[0].length) : text;
@@ -43,7 +43,7 @@ function parse(file, text) {
     .filter((line) => !/^import\s\s/.test(line) && !/^import\s.*\sfrom\s/.test(line))
     .join('\n')
     .trim();
-  const rel = path.relative(DOCS, file).replace(/\\/g, '/');
+  const rel = path.relative(DOCS, file).replaceAll('\\', '/');
   const url = rel === 'index.mdx' || rel === 'index.md' ? '/' : `/${rel.replace(/\.mdx?$/, '')}/`;
   return { meta, body, url };
 }
@@ -51,7 +51,7 @@ function parse(file, text) {
 const files = await collect(DOCS);
 const pages = [];
 for (const file of files) {
-  const rel = path.relative(DOCS, file).replace(/\\/g, '/');
+  const rel = path.relative(DOCS, file).replaceAll('\\', '/');
   if (rel === '404.md' || rel === '404.mdx') continue; // utility page
   const text = await readFile(file, 'utf8');
   pages.push(parse(file, text));
