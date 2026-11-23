@@ -12,7 +12,7 @@ fn binary_reports_version_and_help() {
     assert!(version.status.success());
     let stdout = String::from_utf8(version.stdout).expect("utf8");
     assert!(stdout.contains("route-info-builder"));
-    assert!(stdout.contains("0.2.0"));
+    assert!(stdout.contains(env!("CARGO_PKG_VERSION")));
 
     let help = binary().arg("--help").output().expect("binary must run");
     assert!(help.status.success());
