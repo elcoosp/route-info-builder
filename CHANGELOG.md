@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-23
+
+### Bug Fixes
+- restore Error import for Windows tests & dynamic pkg version in cli test by @elcoosp ([dcfc667](https://github.com/elcoosp/route-info-builder/commit/dcfc6670b00824a4e58968b2ee1ba958e4067fba))
+- polish visual theme contrast and changelog heading by @elcoosp ([8c9db40](https://github.com/elcoosp/route-info-builder/commit/8c9db403eb7d70d7c8faa64a4314cc70213947af))
+
+### Documentation
+- add Vercel documentation link to Cargo.toml by @elcoosp ([6ea270b](https://github.com/elcoosp/route-info-builder/commit/6ea270b9ed8aca6c3cf49f7d8716ffe13583a4fe))
+- enforce SKILL.md rules (jsDelivr logos, absolute links, remove license sections) by @elcoosp ([f663238](https://github.com/elcoosp/route-info-builder/commit/f663238ec9e6bdd60ecaa3ac6fc1a77d6f1a02d9))
+
+### Miscellaneous
+- upgrade to @elcoosp/docs-toolkit@0.11.4, add architecture diagrams, clean config by @elcoosp ([2ab13a6](https://github.com/elcoosp/route-info-builder/commit/2ab13a62367a770dee3c654e7088658924b69873))
+- inject precisely curated keywords for crates.io by @elcoosp ([da20033](https://github.com/elcoosp/route-info-builder/commit/da20033ef09a6eb526402e2ae0d5434f13c11ae8))
+
+### Testing
+- use literal TOML strings for Windows paths by @elcoosp ([9dc597a](https://github.com/elcoosp/route-info-builder/commit/9dc597af5966ca510709307a075281a35ba81086))
+- normalize Windows path separators in collect_files test by @elcoosp ([06eaf31](https://github.com/elcoosp/route-info-builder/commit/06eaf31cdf91cd4307ea041cb7689075dd379ace))
+**Full Changelog**: https://github.com/elcoosp/route-info-builder/compare/v0.2.0...v0.2.1
+
 ### Bug Fixes
 
 
