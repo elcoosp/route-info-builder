@@ -254,7 +254,13 @@ mod tests {
         let files = collect_controller_files(&config.controllers_path)?;
         let names: Vec<String> = files
             .iter()
-            .map(|f| f.strip_prefix(dir.path()).unwrap().display().to_string())
+            .map(|f| {
+                f.strip_prefix(dir.path())
+                    .unwrap()
+                    .display()
+                    .to_string()
+                    .replace('\\', "/")
+            })
             .collect();
         assert_eq!(names, vec!["nested/posts.rs", "users.rs"]);
         Ok(())
