@@ -230,7 +230,7 @@ fn custom_config_shapes_everything() {
 
     let toml = format!(
         r#"
-        controllers_path = "{}"
+        controllers_path = '{}'
         [naming]
         include_method_in_names = false
         collision_strategy = "append-method"
@@ -318,7 +318,7 @@ fn typescript_client_keys_stay_unique_when_names_collide() {
     )
     .expect("fixture");
     let config = Config::from_toml_str(&format!(
-        "controllers_path = \"{}\"\n[naming]\ninclude_method_in_names = false\ncollision_strategy = \"append-method\"\n",
+        "controllers_path = '{}'\n[naming]\ninclude_method_in_names = false\ncollision_strategy = \"append-method\"\n",
         controllers.display()
     ))
     .expect("config");
@@ -348,7 +348,7 @@ fn openapi_operation_ids_stay_unique_when_names_collide() {
     )
     .expect("fixture");
     let config = Config::from_toml_str(&format!(
-        "controllers_path = \"{}\"\n[naming]\ninclude_method_in_names = false\ncollision_strategy = \"append-method\"\n",
+        "controllers_path = '{}'\n[naming]\ninclude_method_in_names = false\ncollision_strategy = \"append-method\"\n",
         controllers.display()
     ))
     .expect("config");
@@ -389,7 +389,7 @@ fn rust_names_match_typescript_client_keys() {
     // The variant prefix changes the enum variant names; the documented
     // `name()` parity with the TypeScript client keys must survive it.
     let config = Config::from_toml_str(&format!(
-        "controllers_path = \"{}\"\n[naming]\nvariant_prefix = \"Api\"\n",
+        "controllers_path = '{}'\n[naming]\nvariant_prefix = \"Api\"\n",
         controllers.display()
     ))
     .expect("config");
